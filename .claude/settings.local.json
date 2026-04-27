@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/21207@hetnieuwelyceum.nl/Desktop/Schoolplanner/$HOME/**)",
+      "Read(//usr/local/lib/**)",
+      "Read(//Users/21207@hetnieuwelyceum.nl/**)",
+      "Bash(mdfind -name npm -onlyin /usr/local)",
+      "Bash(mdfind -name npm -onlyin /opt)"
+    ]
+  }
+}

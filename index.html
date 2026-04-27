@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>SchoolPlanner</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div class="login-screen" id="login-screen">
+    <div class="login-container">
+      <div class="login-left">
+        <div class="login-brand">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="40" height="40"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
+          <h1>SchoolPlanner</h1>
+        </div>
+        <p class="login-tagline">Organiseer je schoolleven op een slimme manier. Rooster, huiswerk, toetsen en cijfers &mdash; alles op een plek.</p>
+        <div class="login-features">
+          <div class="login-feature">
+            <span class="login-feature-icon">&#128218;</span>
+            <div><strong>Alles-in-een</strong><br>Rooster, huiswerk, toetsen en cijfers</div>
+          </div>
+          <div class="login-feature">
+            <span class="login-feature-icon">&#128279;</span>
+            <div><strong>Koppelingen</strong><br>Magister, Google Calendar, Apple &amp; meer</div>
+          </div>
+          <div class="login-feature">
+            <span class="login-feature-icon">&#128293;</span>
+            <div><strong>Motivatie</strong><br>Streak teller en voortgang bijhouden</div>
+          </div>
+        </div>
+      </div>
+      <div class="login-right">
+        <div class="login-card">
+          <h2>Inloggen</h2>
+          <p class="login-subtitle">Log in met je SchoolPlanner account</p>
+          <form onsubmit="handleLogin(event)" id="login-form">
+            <div class="form-group">
+              <label class="form-label">E-mailadres</label>
+              <input type="email" class="form-input" id="login-email" placeholder="naam@school.nl" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Wachtwoord</label>
+              <input type="password" class="form-input" id="login-password" placeholder="Je wachtwoord..." required>
+            </div>
+            <div class="login-options">
+              <label class="login-remember">
+                <input type="checkbox" id="login-remember" checked> Onthoud mij
+              </label>
+              <a href="#" class="login-forgot" onclick="event.preventDefault()">Wachtwoord vergeten?</a>
+            </div>
+            <button type="submit" class="btn btn-primary login-btn">Inloggen</button>
+          </form>
+          <div class="login-divider"><span>of</span></div>
+          <button class="btn btn-outline login-btn" onclick="handleLogin(event)" style="justify-content:center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+            Inloggen met Magister
+          </button>
+          <div class="login-footer">
+            <p>Nog geen account? <a href="#" onclick="handleLogin(event)"><strong>Registreer je school</strong></a></p>
+            <div class="login-plans">
+              <span class="login-plan-badge free">Gratis</span>
+              <span class="login-plan-badge pro">Pro</span>
+              <span class="login-plan-badge school">School</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Shell (hidden until login) -->
+  <div class="app-shell" id="app-shell" style="display:none">
+    <!-- Navbar -->
+    <nav class="navbar" id="navbar"></nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="container" id="app-content"></div>
+    </main>
+
+    <!-- Mobile Navigation -->
+    <nav class="mobile-nav" id="mobile-nav"></nav>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modal-overlay"></div>
+  </div>
+
+  <!-- Scripts (order matters) -->
+  <script src="js/data.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/pages.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
