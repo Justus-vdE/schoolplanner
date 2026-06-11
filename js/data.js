@@ -562,14 +562,8 @@ function lessonHourTimes() {
   return out;
 }
 
-// --- Auth ---
-let isLoggedIn = localStorage.getItem('sp_logged_in') === 'true';
+// --- Plan (gratis/pro) ---
 let userPlan = localStorage.getItem('sp_user_plan') || 'pro';
-
-function setLoggedIn(val) {
-  isLoggedIn = val;
-  localStorage.setItem('sp_logged_in', val.toString());
-}
 
 function setUserPlan(plan) {
   userPlan = plan;

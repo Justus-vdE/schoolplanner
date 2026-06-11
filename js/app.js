@@ -112,23 +112,7 @@ function renderMobileNav() {
   return `<div class="mobile-nav-inner">${items}</div>`;
 }
 
-// --- Login ---
-function handleLogin(e) {
-  if (e) e.preventDefault();
-  setLoggedIn(true);
-  showApp();
-}
-
-function handleLogout() {
-  setLoggedIn(false);
-  document.getElementById('app-shell').style.display = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
-}
-
 function showApp() {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-shell').style.display = 'block';
-
   // Render shell
   document.getElementById('navbar').innerHTML = renderNavbar();
   document.getElementById('mobile-nav').innerHTML = renderMobileNav();
@@ -155,13 +139,7 @@ function initApp() {
     currentPage = hash;
   }
 
-  // Check login state
-  if (isLoggedIn) {
-    showApp();
-  } else {
-    document.getElementById('login-screen').style.display = 'flex';
-    document.getElementById('app-shell').style.display = 'none';
-  }
+  showApp();
 
   // Close notification dropdown on outside click
   document.addEventListener('click', () => {
