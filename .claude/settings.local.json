@@ -6,7 +6,9 @@
       "Read(//usr/local/lib/**)",
       "Read(//Users/21207@hetnieuwelyceum.nl/**)",
       "Bash(mdfind -name npm -onlyin /usr/local)",
-      "Bash(mdfind -name npm -onlyin /opt)"
+      "Bash(mdfind -name npm -onlyin /opt)",
+      "Read(//opt/homebrew/opt/**)",
+      "Read(//usr/local/**)"
     ]
   }
 }

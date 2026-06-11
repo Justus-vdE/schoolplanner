@@ -28,17 +28,76 @@ function getGreeting() {
   return 'Goedenavond';
 }
 
-// --- Subjects ---
+// --- Subjects (catalogus) ---
+// 'levels' geeft aan op welk examenniveau het vak bestaat (vmbo/havo/vwo).
+// De volledige catalogus blijft beschikbaar voor opzoeken; via je instellingen
+// kies je zelf welke vakken jij hebt (appSettings.mySubjects).
 const subjects = {
-  wiskunde:     { name: 'Wiskunde',     color: '#3B82F6', light: '#DBEAFE', teacher: 'Dhr. Bakker',    icon: '📐' },
-  nederlands:   { name: 'Nederlands',   color: '#EF4444', light: '#FEE2E2', teacher: 'Mevr. Jansen',   icon: '📖' },
-  engels:       { name: 'Engels',       color: '#8B5CF6', light: '#EDE9FE', teacher: 'Dhr. Williams',   icon: '🇬🇧' },
-  natuurkunde:  { name: 'Natuurkunde',  color: '#F59E0B', light: '#FEF3C7', teacher: 'Mevr. de Boer',  icon: '⚡' },
-  geschiedenis: { name: 'Geschiedenis', color: '#10B981', light: '#D1FAE5', teacher: 'Dhr. Vermeer',    icon: '🏛️' },
-  biologie:     { name: 'Biologie',     color: '#06B6D4', light: '#CFFAFE', teacher: 'Mevr. Smit',     icon: '🧬' },
-  scheikunde:   { name: 'Scheikunde',   color: '#EC4899', light: '#FCE7F3', teacher: 'Dhr. van Dijk',  icon: '🧪' },
-  economie:     { name: 'Economie',     color: '#F97316', light: '#FFEDD5', teacher: 'Mevr. de Groot', icon: '📊' },
+  nederlands:   { name: 'Nederlands',   color: '#EF4444', light: '#FEE2E2', teacher: 'Mevr. Jansen',   icon: '📖', levels: ['vmbo','havo','vwo'] },
+  engels:       { name: 'Engels',       color: '#8B5CF6', light: '#EDE9FE', teacher: 'Dhr. Williams',   icon: '🇬🇧', levels: ['vmbo','havo','vwo'] },
+  frans:        { name: 'Frans',        color: '#6366F1', light: '#E0E7FF', teacher: '',                icon: '🇫🇷', levels: ['vmbo','havo','vwo'] },
+  duits:        { name: 'Duits',        color: '#0EA5E9', light: '#E0F2FE', teacher: '',                icon: '🇩🇪', levels: ['vmbo','havo','vwo'] },
+  spaans:       { name: 'Spaans',       color: '#F43F5E', light: '#FFE4E6', teacher: '',                icon: '🇪🇸', levels: ['havo','vwo'] },
+  latijn:       { name: 'Latijn',       color: '#B45309', light: '#FEF3C7', teacher: '',                icon: '🏺', levels: ['vwo'] },
+  grieks:       { name: 'Grieks',       color: '#92400E', light: '#FDE68A', teacher: '',                icon: '📜', levels: ['vwo'] },
+
+  wiskunde:     { name: 'Wiskunde',     color: '#3B82F6', light: '#DBEAFE', teacher: 'Dhr. Bakker',    icon: '📐', levels: ['vmbo'] },
+  wiskundea:    { name: 'Wiskunde A',   color: '#2563EB', light: '#DBEAFE', teacher: '',                icon: '📈', levels: ['havo','vwo'] },
+  wiskundeb:    { name: 'Wiskunde B',   color: '#1D4ED8', light: '#DBEAFE', teacher: '',                icon: '📐', levels: ['havo','vwo'] },
+  wiskundec:    { name: 'Wiskunde C',   color: '#60A5FA', light: '#DBEAFE', teacher: '',                icon: '📉', levels: ['vwo'] },
+  wiskunded:    { name: 'Wiskunde D',   color: '#1E40AF', light: '#DBEAFE', teacher: '',                icon: '➗', levels: ['havo','vwo'] },
+
+  natuurkunde:  { name: 'Natuurkunde',  color: '#F59E0B', light: '#FEF3C7', teacher: 'Mevr. de Boer',  icon: '⚡', levels: ['havo','vwo'] },
+  scheikunde:   { name: 'Scheikunde',   color: '#EC4899', light: '#FCE7F3', teacher: 'Dhr. van Dijk',  icon: '🧪', levels: ['havo','vwo'] },
+  nask:         { name: 'NaSk',         color: '#D97706', light: '#FEF3C7', teacher: '',                icon: '⚗️', levels: ['vmbo'] },
+  biologie:     { name: 'Biologie',     color: '#06B6D4', light: '#CFFAFE', teacher: 'Mevr. Smit',     icon: '🧬', levels: ['vmbo','havo','vwo'] },
+  nlt:          { name: 'NLT',          color: '#0D9488', light: '#CCFBF1', teacher: '',                icon: '🔬', levels: ['havo','vwo'] },
+
+  geschiedenis: { name: 'Geschiedenis', color: '#10B981', light: '#D1FAE5', teacher: 'Dhr. Vermeer',    icon: '🏛️', levels: ['vmbo','havo','vwo'] },
+  aardrijkskunde:{name: 'Aardrijkskunde',color:'#14B8A6', light: '#CCFBF1', teacher: '',                icon: '🌍', levels: ['vmbo','havo','vwo'] },
+  economie:     { name: 'Economie',     color: '#F97316', light: '#FFEDD5', teacher: 'Mevr. de Groot', icon: '📊', levels: ['vmbo','havo','vwo'] },
+  bedrijfseconomie:{name:'Bedrijfseconomie',color:'#EA580C',light:'#FFEDD5',teacher:'',                icon: '💼', levels: ['havo','vwo'] },
+  maatschappijleer:{name:'Maatschappijleer',color:'#A855F7',light:'#F3E8FF',teacher:'',                icon: '👥', levels: ['vmbo','havo','vwo'] },
+  maatschappijwetenschappen:{name:'Maatschappijwetensch.',color:'#9333EA',light:'#F3E8FF',teacher:'', icon: '🗳️', levels: ['havo','vwo'] },
+  filosofie:    { name: 'Filosofie',    color: '#7C3AED', light: '#EDE9FE', teacher: '',                icon: '🤔', levels: ['havo','vwo'] },
+  godsdienst:   { name: 'Godsdienst/Levbesch.', color: '#6B7280', light: '#F3F4F6', teacher: '',       icon: '✝️', levels: ['vmbo','havo','vwo'] },
+
+  informatica:  { name: 'Informatica',  color: '#475569', light: '#E2E8F0', teacher: '',                icon: '💻', levels: ['vmbo','havo','vwo'] },
+  ckv:          { name: 'CKV',          color: '#DB2777', light: '#FCE7F3', teacher: '',                icon: '🎭', levels: ['havo','vwo'] },
+  kunst:        { name: 'Kunst/Tekenen',color: '#EC4899', light: '#FCE7F3', teacher: '',                icon: '🎨', levels: ['vmbo','havo','vwo'] },
+  muziek:       { name: 'Muziek',       color: '#F472B6', light: '#FCE7F3', teacher: '',                icon: '🎵', levels: ['vmbo','havo','vwo'] },
+  techniek:     { name: 'Techniek',     color: '#64748B', light: '#E2E8F0', teacher: '',                icon: '🔧', levels: ['vmbo'] },
+  lo:           { name: 'Lichamelijke opv.', color: '#22C55E', light: '#DCFCE7', teacher: '',           icon: '🏃', levels: ['vmbo','havo','vwo'] },
 };
+
+// Examenniveaus
+const examLevels = {
+  vmbo: 'VMBO',
+  havo: 'HAVO',
+  vwo:  'VWO',
+};
+
+// Welke vakken bestaan op een bepaald niveau?
+function subjectsForLevel(level) {
+  return Object.entries(subjects)
+    .filter(([, s]) => !s.levels || s.levels.includes(level))
+    .map(([key]) => key);
+}
+
+// De vakken die JIJ hebt gekozen (valt terug op een standaardselectie).
+function mySubjectKeys() {
+  if (appSettings && Array.isArray(appSettings.mySubjects)) {
+    return appSettings.mySubjects.filter(k => subjects[k]);
+  }
+  return ['nederlands','engels','wiskundeb','natuurkunde','scheikunde','biologie','geschiedenis','economie'].filter(k => subjects[k]);
+}
+
+// Entries (voor dropdowns), alfabetisch op naam.
+function mySubjectEntries() {
+  return mySubjectKeys()
+    .map(k => [k, subjects[k]])
+    .sort((a, b) => a[1].name.localeCompare(b[1].name, 'nl'));
+}
 
 // --- Schedule (weekly timetable) ---
 const defaultSchedule = {
@@ -113,8 +172,25 @@ let homework = [
   { id: 10, subject: 'engels',       title: 'Essay "Climate Change" (500 words)', due: daysFromNow(7), done: false },
 ];
 
+function isDemoCleared() {
+  return localStorage.getItem('sp_demo_cleared') === 'true';
+}
+
 function loadHomework() {
   const saved = localStorage.getItem('sp_homework');
+  if (isDemoCleared()) {
+    // Voorbeelddata gewist: alleen je eigen items laden
+    homework = [];
+    if (saved) {
+      try {
+        JSON.parse(saved).forEach(item => {
+          item.due = new Date(item.due);
+          homework.push(item);
+        });
+      } catch(e) {}
+    }
+    return;
+  }
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
@@ -125,8 +201,10 @@ function loadHomework() {
       });
       // Add any user-added items
       parsed.filter(p => p.id > 100).forEach(item => {
-        item.due = new Date(item.due);
-        homework.push(item);
+        if (!homework.some(h => h.id === item.id)) {
+          item.due = new Date(item.due);
+          homework.push(item);
+        }
       });
     } catch(e) {}
   }
@@ -166,7 +244,7 @@ function saveTests() {
 }
 
 // --- Grades ---
-const grades = {
+const defaultGrades = {
   wiskunde:     { grades: [7.2, 6.8, 8.1, 7.5, 6.9], descriptions: ['Toets H1', 'SO H2', 'Proefwerk H3', 'Toets H4', 'SO H5'] },
   nederlands:   { grades: [6.5, 7.8, 7.0, 8.2],       descriptions: ['Opstel', 'Grammatica', 'Boekverslag', 'Spreekbeurt'] },
   engels:       { grades: [8.0, 7.5, 8.8, 7.2, 9.1], descriptions: ['Vocab T1', 'Writing', 'Vocab T2', 'Reading', 'Speaking'] },
@@ -177,13 +255,127 @@ const grades = {
   economie:     { grades: [7.5, 8.0, 7.8],             descriptions: ['Toets Markt', 'Werkstuk', 'SO Conjunctuur'] },
 };
 
+let grades = JSON.parse(JSON.stringify(defaultGrades));
+
+function loadGrades() {
+  const saved = localStorage.getItem('sp_grades');
+  if (saved) {
+    try { grades = JSON.parse(saved); return; } catch(e) {}
+  }
+  grades = isDemoCleared() ? {} : JSON.parse(JSON.stringify(defaultGrades));
+}
+
+function saveGrades() {
+  localStorage.setItem('sp_grades', JSON.stringify(grades));
+}
+
 function getAverage(arr) {
+  if (!arr.length) return '-';
   return (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1);
 }
 
 function getOverallAverage() {
   const allGrades = Object.values(grades).flatMap(s => s.grades);
   return getAverage(allGrades);
+}
+
+// --- Cijfers plakken uit Magister ---
+// Magister gebruikt vak-afkortingen; deze map vertaalt ze naar onze vakken.
+const magisterSubjectMap = {
+  ne: 'nederlands', netl: 'nederlands', nederlands: 'nederlands',
+  en: 'engels', entl: 'engels', engels: 'engels',
+  fa: 'frans', fatl: 'frans', frans: 'frans',
+  du: 'duits', dutl: 'duits', duits: 'duits',
+  sp: 'spaans', sptl: 'spaans', spaans: 'spaans',
+  la: 'latijn', lakc: 'latijn', latl: 'latijn', latijn: 'latijn',
+  gr: 'grieks', grkc: 'grieks', grtl: 'grieks', grieks: 'grieks',
+  wi: 'wiskunde', wis: 'wiskunde', wiskunde: 'wiskunde',
+  wa: 'wiskundea', wisa: 'wiskundea', 'wiskunde a': 'wiskundea',
+  wb: 'wiskundeb', wisb: 'wiskundeb', 'wiskunde b': 'wiskundeb',
+  wc: 'wiskundec', wisc: 'wiskundec', 'wiskunde c': 'wiskundec',
+  wd: 'wiskunded', wisd: 'wiskunded', 'wiskunde d': 'wiskunded',
+  na: 'natuurkunde', nat: 'natuurkunde', natuurkunde: 'natuurkunde',
+  sk: 'scheikunde', schk: 'scheikunde', scheikunde: 'scheikunde',
+  nask: 'nask', nask1: 'nask', nask2: 'nask',
+  bi: 'biologie', biol: 'biologie', biologie: 'biologie',
+  nlt: 'nlt',
+  gs: 'geschiedenis', ges: 'geschiedenis', geschiedenis: 'geschiedenis',
+  ak: 'aardrijkskunde', aardrijkskunde: 'aardrijkskunde',
+  ec: 'economie', eco: 'economie', econ: 'economie', economie: 'economie',
+  beco: 'bedrijfseconomie', be: 'bedrijfseconomie', bedrijfseconomie: 'bedrijfseconomie',
+  ma: 'maatschappijleer', maat: 'maatschappijleer', maatschappijleer: 'maatschappijleer',
+  maw: 'maatschappijwetenschappen', mw: 'maatschappijwetenschappen',
+  fi: 'filosofie', fil: 'filosofie', filosofie: 'filosofie',
+  gd: 'godsdienst', gl: 'godsdienst', lv: 'godsdienst', godsdienst: 'godsdienst',
+  in: 'informatica', inf: 'informatica', informatica: 'informatica',
+  ckv: 'ckv', kv: 'ckv',
+  te: 'kunst', kubv: 'kunst', bte: 'kunst', tekenen: 'kunst', kunst: 'kunst',
+  mu: 'muziek', kumu: 'muziek', muziek: 'muziek',
+  tn: 'techniek', tech: 'techniek', techniek: 'techniek',
+  lo: 'lo', gym: 'lo',
+};
+
+// Herkent vak + cijfer(s) in geplakte Magister-tekst. Elke regel kan zijn:
+// "ne  7,5"  /  "Nederlands  Boekverslag  7.5"  /  tab-gescheiden tabelregels.
+function parsePastedGrades(text) {
+  const rows = [];
+  const lines = String(text || '').split(/\r?\n/);
+  let lastSubject = '';
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const tokens = line.split(/\t+| {2,}|;/).map(t => t.trim()).filter(Boolean);
+
+    // Vak zoeken (afkorting of volledige naam)
+    let subject = '';
+    const descParts = [];
+    for (const tok of tokens) {
+      const key = tok.toLowerCase();
+      if (!subject && magisterSubjectMap[key]) { subject = magisterSubjectMap[key]; continue; }
+      if (!subject) {
+        const byName = Object.entries(subjects).find(([, s]) => s.name.toLowerCase() === key);
+        if (byName) { subject = byName[0]; continue; }
+      }
+      descParts.push(tok);
+    }
+    if (subject) lastSubject = subject;
+    else subject = lastSubject; // doorlopende regels onder hetzelfde vak
+
+    // Cijfers zoeken: 1,0 t/m 10,0 (komma of punt). Voorkeur voor decimalen,
+    // zodat wegingen (1, 2, 3) niet als cijfer worden gezien.
+    const gradeTokens = [];
+    const cleanDesc = [];
+    for (const part of descParts) {
+      const m = part.match(/^(10|[1-9])([.,]\d{1,2})?$/);
+      if (m) gradeTokens.push({ raw: part, decimal: !!m[2], value: parseFloat(part.replace(',', '.')) });
+      else cleanDesc.push(part);
+    }
+    let grade = null;
+    const decimals = gradeTokens.filter(g => g.decimal);
+    if (decimals.length) grade = decimals[0].value;
+    else if (gradeTokens.length === 1) grade = gradeTokens[0].value;
+
+    if (grade != null && grade >= 1 && grade <= 10) {
+      rows.push({
+        subject: subject || '',
+        desc: cleanDesc.join(' ').slice(0, 60) || 'Cijfer uit Magister',
+        grade: Math.round(grade * 10) / 10,
+      });
+    }
+  }
+  return rows;
+}
+
+// --- Voorbeelddata wissen ---
+function clearDemoData() {
+  homework = homework.filter(h => h.id > 100);
+  tests = tests.filter(t => t.id > 100);
+  events = events.filter(e => e.id > 100);
+  todos = [];
+  grades = {};
+  localStorage.setItem('sp_demo_cleared', 'true');
+  saveHomework(); saveTests(); saveEvents(); saveTodos(); saveGrades();
 }
 
 // --- Events (Agenda) ---
@@ -327,6 +519,8 @@ const defaultSettings = {
   theme: 'light',
   notifications: true,
   weekendHidden: true,
+  examLevel: 'vwo',
+  mySubjects: ['nederlands','engels','wiskundeb','natuurkunde','scheikunde','biologie','geschiedenis','economie'],
 };
 
 let appSettings = { ...defaultSettings };
@@ -342,6 +536,32 @@ function saveSettings() {
   localStorage.setItem('sp_settings', JSON.stringify(appSettings));
 }
 
+// Docent per vak: eigen instelling gaat vóór de catalogus-default
+function subjectTeacher(key) {
+  if (appSettings.teachers && appSettings.teachers[key]) return appSettings.teachers[key];
+  return (subjects[key] && subjects[key].teacher) || '';
+}
+
+function updateTeacher(key, value) {
+  if (!appSettings.teachers) appSettings.teachers = {};
+  appSettings.teachers[key] = value.trim();
+  saveSettings();
+}
+
+// Lesuur-tijden gegenereerd uit de roosterinstellingen (één bron van waarheid)
+function lessonHourTimes() {
+  const start = appSettings.startTime.split(':').map(Number);
+  let m = start[0] * 60 + start[1];
+  const out = {};
+  for (let i = 1; i <= 8; i++) {
+    out[i] = `${minToTime(m)} - ${minToTime(m + appSettings.lessonDuration)}`;
+    m += appSettings.lessonDuration;
+    if (i === appSettings.breakAfter) m += appSettings.breakDuration;
+    else if (i === appSettings.lunchAfter) m += appSettings.lunchDuration;
+  }
+  return out;
+}
+
 // --- Auth ---
 let isLoggedIn = localStorage.getItem('sp_logged_in') === 'true';
 let userPlan = localStorage.getItem('sp_user_plan') || 'pro';
@@ -354,4 +574,262 @@ function setLoggedIn(val) {
 function setUserPlan(plan) {
   userPlan = plan;
   localStorage.setItem('sp_user_plan', plan);
+}
+
+// ============================================================
+// --- Planner (route naar toetsweek & examen) ---
+// Plan vooraf een toetsweek of examen: vul je beschikbare tijd en je
+// taken (met geschatte duur) in, dan verdelen we het werk over je
+// beschikbare dagen en zie je of je voor of achter op schema loopt.
+// Je dagelijkse huiswerk en taken (todos) blijven daarnaast bestaan.
+// ============================================================
+
+// plan = {
+//   id, type: 'toetsweek'|'examen', name,
+//   examDate: ISO,                  // eerste toets / examen
+//   readyDaysBefore: number,        // zoveel dagen van tevoren klaar willen zijn
+//   defaultDailyHours: number,      // standaard beschikbare uren per dag
+//   availability: { [dateKey]: hours },   // losse dag-overrides
+//   tasks: [ { id, subject, title, hours, hoursDone, done } ]
+// }
+let plans = [];
+let activePlanId = null;
+
+function loadPlans() {
+  const saved = localStorage.getItem('sp_plans');
+  if (saved) {
+    try { plans = JSON.parse(saved); } catch (e) { plans = []; }
+  }
+  // Migratie: oudere plannen hebben nog geen vaste startdatum
+  let migrated = false;
+  plans.forEach(p => {
+    if (!p.startDate) { p.startDate = new Date().toISOString(); migrated = true; }
+  });
+  if (migrated) savePlans();
+  const ap = localStorage.getItem('sp_active_plan');
+  if (ap) activePlanId = parseInt(ap) || null;
+}
+
+function savePlans() {
+  localStorage.setItem('sp_plans', JSON.stringify(plans));
+  if (activePlanId != null) localStorage.setItem('sp_active_plan', String(activePlanId));
+}
+
+function getPlan(id) {
+  return plans.find(p => p.id === id);
+}
+
+// --- Date helpers voor de planner ---
+function startOfDay(d) {
+  d = new Date(d);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function dateKey(d) {
+  d = new Date(d);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function daysBetween(a, b) {
+  return Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
+}
+function addDays(d, n) {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+function fmtHours(h) {
+  const rounded = Math.round(h * 10) / 10;
+  const str = (Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1)).replace('.', ',');
+  return `${str} uur`;
+}
+
+// Tijd-helpers voor de tijdblokken
+function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+function minToTime(m) { m = Math.round(m); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`; }
+function slotHours(s) { return Math.max(0, timeToMin(s.end) - timeToMin(s.start)) / 60; }
+function daySlots(plan, d) { const k = dateKey(d); return (plan.slots && plan.slots[k]) || []; }
+
+// De relevante datum = vroegste examen/toets uit het rooster, anders het losse veld.
+function planExamDate(plan) {
+  if (plan.exams && plan.exams.length) {
+    return startOfDay(new Date(Math.min(...plan.exams.map(e => +new Date(e.date)))));
+  }
+  return startOfDay(new Date(plan.examDate));
+}
+
+// Houd het losse examDate-veld gelijk aan de vroegste roosterdatum.
+function syncPlanExamDate(plan) {
+  if (plan.exams && plan.exams.length) {
+    plan.examDate = planExamDate(plan).toISOString();
+  }
+}
+
+function planDeadline(plan) {
+  // De dag waarop alles klaar moet zijn = examendatum minus 'readyDaysBefore'
+  return startOfDay(addDays(planExamDate(plan), -(plan.readyDaysBefore || 0)));
+}
+
+function availabilityFor(plan, d) {
+  // Heb je voor deze dag specifieke tijdblokken ingevuld? Dan tellen die uren.
+  const sl = daySlots(plan, d);
+  if (sl.length) return sl.reduce((s, b) => s + slotHours(b), 0);
+  const key = dateKey(d);
+  if (plan.availability && plan.availability[key] != null) return plan.availability[key];
+  return plan.defaultDailyHours != null ? plan.defaultDailyHours : 2;
+}
+
+// Eigen deadline per taak: de dag vóór de toets van dat vak (als die in het
+// rooster staat), anders de algemene plan-deadline.
+function taskDue(plan, task, deadline) {
+  if (plan.exams && plan.exams.length) {
+    const examDates = plan.exams
+      .filter(e => e.subject === task.subject)
+      .map(e => startOfDay(new Date(e.date)))
+      .sort((a, b) => a - b);
+    if (examDates.length) {
+      const d = startOfDay(addDays(examDates[0], -1));
+      return d < deadline ? d : deadline;
+    }
+  }
+  return deadline;
+}
+
+// Verdeelt de taakuren over de beschikbare dagen vanaf vandaag t/m de
+// deadline. Vakken worden afgewisseld (blokken van max 1 uur, round-robin)
+// en elke taak wordt vóór de toets van het eigen vak gepland.
+function buildSchedule(plan) {
+  const today0 = startOfDay(today);
+  const deadline = planDeadline(plan);
+
+  const days = [];
+  for (let d = new Date(today0); d <= deadline; d = addDays(d, 1)) {
+    const slots = [...daySlots(plan, d)].sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+    days.push({
+      date: new Date(d),
+      key: dateKey(d),
+      capacity: Math.max(0, availabilityFor(plan, d)),
+      slots,
+      used: 0,
+      assignments: [],
+    });
+  }
+
+  // Resterende uren per taak (klaar = niet meer inplannen), op deadline gesorteerd
+  const items = plan.tasks
+    .map(t => ({
+      task: t,
+      rem: Math.max(0, (t.hours || 0) - Math.max(0, t.hoursDone || 0)),
+      due: taskDue(plan, t, deadline),
+    }))
+    .filter(i => i.rem > 0.0001)
+    .sort((a, b) => a.due - b.due);
+
+  for (const day of days) {
+    let free = day.capacity;
+    const byTask = new Map();
+    let guard = 0;
+    while (free > 0.0001 && guard++ < 500) {
+      const eligible = items.filter(i => i.rem > 0.0001 && i.due >= day.date);
+      if (!eligible.length) break;
+      let allocated = false;
+      for (const it of eligible) {
+        if (free <= 0.0001) break;
+        const chunk = Math.min(1, it.rem, free);
+        if (chunk <= 0.0001) continue;
+        byTask.set(it.task.id, (byTask.get(it.task.id) || 0) + chunk);
+        it.rem -= chunk;
+        free -= chunk;
+        allocated = true;
+      }
+      if (!allocated) break;
+    }
+    items.forEach(it => {
+      const h = byTask.get(it.task.id);
+      if (h) day.assignments.push({ taskId: it.task.id, subject: it.task.subject, title: it.task.title, hours: h });
+    });
+    day.used = day.capacity - free;
+  }
+
+  // Wat nergens meer past (vóór de eigen toets/deadline) telt als tekort
+  const overflow = items.reduce((s, i) => s + i.rem, 0);
+
+  // Voor dagen met tijdblokken: zet de toegewezen uren om in concrete tijdslots.
+  days.forEach(day => {
+    if (!day.slots.length) return;
+    day.timed = [];
+    let bi = 0;
+    let cursor = timeToMin(day.slots[0].start);
+    day.assignments.forEach(a => {
+      let rem = a.hours * 60;
+      while (rem > 0.01 && bi < day.slots.length) {
+        const bEnd = timeToMin(day.slots[bi].end);
+        if (cursor >= bEnd) { bi++; if (bi < day.slots.length) cursor = timeToMin(day.slots[bi].start); continue; }
+        const use = Math.min(bEnd - cursor, rem);
+        day.timed.push({ subject: a.subject, title: a.title, start: minToTime(cursor), end: minToTime(cursor + use) });
+        cursor += use;
+        rem -= use;
+        if (cursor >= bEnd) { bi++; if (bi < day.slots.length) cursor = timeToMin(day.slots[bi].start); }
+      }
+    });
+  });
+
+  const totalCapacity = days.reduce((s, d) => s + d.capacity, 0);
+  return { days, overflow, totalCapacity };
+}
+
+// Berekent voortgang en of je voor/achter op schema loopt.
+// De verwachte voortgang is een VASTE lijn vanaf de startdatum van het plan:
+// (verstreken beschikbare uren / totale beschikbare uren) × totaal benodigde
+// uren. Een dag niets doen schuift die lijn dus niet op — je loopt dan echt
+// achter en moet inhalen.
+function planStatus(plan) {
+  const today0 = startOfDay(today);
+  const sched = buildSchedule(plan);
+
+  const totalNeeded = plan.tasks.reduce((s, t) => s + Math.max(0, t.hours || 0), 0);
+  const totalDone = plan.tasks.reduce((s, t) => s + Math.min(t.hours || 0, Math.max(0, t.hoursDone || 0)), 0);
+
+  const deadline = planDeadline(plan);
+  const start = startOfDay(plan.startDate ? new Date(plan.startDate) : today);
+
+  let capTotal = 0, capElapsed = 0, guard = 0;
+  for (let d = new Date(start); d <= deadline && guard++ < 400; d = addDays(d, 1)) {
+    const c = Math.max(0, availabilityFor(plan, d));
+    capTotal += c;
+    if (d <= today0) capElapsed += c;
+  }
+  const expectedByToday = capTotal > 0 ? Math.min(totalNeeded, totalNeeded * (capElapsed / capTotal)) : 0;
+
+  const diff = totalDone - expectedByToday; // positief = vóór op schema
+
+  return {
+    sched,
+    totalNeeded,
+    totalDone,
+    remaining: Math.max(0, totalNeeded - totalDone),
+    expectedByToday,
+    diff,
+    onSchedule: diff >= -0.001,
+    pct: totalNeeded > 0 ? Math.round((totalDone / totalNeeded) * 100) : 0,
+    overflow: sched.overflow,
+    deadline,
+    daysToDeadline: daysBetween(today0, deadline),
+    daysToExam: daysBetween(today0, planExamDate(plan)),
+  };
+}
+
+// Het plan dat op het dashboard getoond wordt: eerstvolgende met een
+// deadline die nog niet ver voorbij is.
+function getDashboardPlan() {
+  const upcoming = [...plans]
+    .filter(p => planDeadline(p) >= startOfDay(addDays(today, -7)))
+    .sort((a, b) => new Date(planExamDate(a)) - new Date(planExamDate(b)));
+  return upcoming[0] || null;
+}
+
+function statusLabel(st) {
+  if (st.totalNeeded === 0) return { text: 'Nog geen taken', cls: 'neutral' };
+  if (st.pct >= 100) return { text: 'Helemaal klaar! 🎉', cls: 'ahead' };
+  if (Math.abs(st.diff) < 0.25) return { text: 'Precies op schema', cls: 'ontrack' };
+  if (st.diff > 0) return { text: `${fmtHours(st.diff)} vóór op schema`, cls: 'ahead' };
+  return { text: `${fmtHours(Math.abs(st.diff))} achter op schema`, cls: 'behind' };
 }

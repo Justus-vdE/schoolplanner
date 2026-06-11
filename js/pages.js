@@ -6,6 +6,12 @@
 function renderDashboard() {
   loadTodos();
   loadHomework();
+  loadPlans();
+
+  // Voortgang van je eerstvolgende toetsweek/examen voor de overzichtsbalk
+  const dPlan = getDashboardPlan();
+  const dSt = dPlan ? planStatus(dPlan) : null;
+  const dLbl = dSt ? statusLabel(dSt) : null;
 
   const todayLessons = getTodaySchedule();
   const todayHw = homework.filter(h => {
@@ -51,11 +57,12 @@ function renderDashboard() {
         </div>
         <div class="streak-banner-right">
           <div class="streak-days">
-            ${['Ma','Di','Wo','Do','Vr','Za','Zo'].map((d, i) => {
-              const dayNum = i + 1;
-              const currentDay = today.getDay() === 0 ? 7 : today.getDay();
-              const isActive = dayNum <= currentDay && dayNum > currentDay - streak;
-              return `<div class="streak-day-dot ${isActive ? 'active' : ''}">${d}</div>`;
+            ${Array.from({ length: 7 }, (_, i) => {
+              const d = addDays(today, i - 6);
+              const labels = ['Zo','Ma','Di','Wo','Do','Vr','Za'];
+              const daysAgo = 6 - i;
+              const isActive = streak > daysAgo;
+              return `<div class="streak-day-dot ${isActive ? 'active' : ''}">${labels[d.getDay()]}</div>`;
             }).join('')}
           </div>
         </div>
@@ -102,6 +109,15 @@ function renderDashboard() {
             <div class="progress-overview-value">vandaag</div>
           </div>
         </div>
+        ${dPlan ? `
+        <div class="progress-overview-divider"></div>
+        <div class="progress-overview-item">
+          <div class="progress-overview-ring">${renderCircularProgress(dSt.pct, 80, 7)}</div>
+          <div class="progress-overview-info">
+            <div class="progress-overview-label">Op schema</div>
+            <div class="progress-overview-value ${dLbl.cls}">${dSt.pct >= 100 ? 'Klaar!' : dLbl.cls === 'behind' ? fmtHours(Math.abs(dSt.diff)) + ' achter' : dLbl.cls === 'ahead' ? fmtHours(dSt.diff) + ' vóór' : 'op schema'}</div>
+          </div>
+        </div>` : ''}
       </div>
 
       <!-- Welcome Block -->
@@ -132,20 +148,23 @@ function renderDashboard() {
                 <span class="card-action" onclick="navigate('rooster')">Volledig rooster &rarr;</span>
               </div>
               ${todayLessons.length > 0 ? todayLessons.map(l => {
-                const s = subjects[l.subject];
+                const s = subjects[l.subject] || { name: l.subject, color: '#94A3B8' };
+                const teacher = subjectTeacher(l.subject);
                 return `
                   <div class="schedule-item">
                     <span class="schedule-time">${l.time}</span>
                     <span class="schedule-dot" style="background:${s.color}"></span>
                     <div class="schedule-info">
                       <div class="schedule-subject">${s.name}</div>
-                      <div class="schedule-detail">${s.teacher}</div>
+                      ${teacher ? `<div class="schedule-detail">${esc(teacher)}</div>` : ''}
                     </div>
-                    <span class="schedule-room">${l.room}</span>
+                    <span class="schedule-room">${esc(l.room)}</span>
                   </div>
                 `;
               }).join('') : '<div class="empty-state empty-state-compact"><p>Geen lessen vandaag!</p></div>'}
             </div>
+
+            ${dPlan && dSt ? renderStudyTodayCard(dPlan, dSt) : ''}
 
             <!-- Tests This Week -->
             <div class="card">
@@ -178,12 +197,12 @@ function renderDashboard() {
                 <span class="card-action" onclick="navigate('huiswerk')">Alle huiswerk &rarr;</span>
               </div>
               ${todayHw.length > 0 ? todayHw.map(h => {
-                const s = subjects[h.subject];
+                const s = subjects[h.subject] || { name: h.subject };
                 return `
                   <div class="todo-item" onclick="toggleHomework(${h.id})">
                     ${renderCheckbox(h.done, h.id, 'hw')}
                     <div style="flex:1">
-                      <div class="todo-text ${h.done ? 'done' : ''}">${h.title}</div>
+                      <div class="todo-text ${h.done ? 'done' : ''}">${esc(h.title)}</div>
                       <div style="font-size:0.75rem;color:var(--gray-400);margin-top:2px">${s.name}</div>
                     </div>
                     <span class="todo-due urgent">Vandaag</span>
@@ -202,7 +221,7 @@ function renderDashboard() {
                 ${todos.map(t => `
                   <div class="todo-item" onclick="toggleTodo(${t.id})">
                     ${renderCheckbox(t.done, t.id, 'todo')}
-                    <span class="todo-text ${t.done ? 'done' : ''}">${t.text}</span>
+                    <span class="todo-text ${t.done ? 'done' : ''}">${esc(t.text)}</span>
                   </div>
                 `).join('')}
               </div>
@@ -216,6 +235,7 @@ function renderDashboard() {
 
         <!-- Right: Calendar sidebar -->
         <div class="dashboard-sidebar">
+          ${renderPlannerDashboardCard()}
           <div class="card">
             <div class="card-header">
               <div class="card-title">${icon('calendar')} Kalender</div>
@@ -272,12 +292,13 @@ function renderRooster() {
               <div class="rooster-day-header ${isToday ? 'today' : ''}">${dayLabels[i]}</div>
               <div class="rooster-lessons">
                 ${lessons.map((l, li) => {
-                  const s = subjects[l.subject];
+                  const s = subjects[l.subject] || { name: l.subject, color: '#94A3B8', light: '#F1F5F9' };
+                  const teacher = subjectTeacher(l.subject);
                   return `
                     <div class="lesson-block" style="background:${s.light};border-color:${s.color}">
                       <div class="lesson-hour">${l.hour}e uur &middot; ${l.time}</div>
                       <div class="lesson-subject" style="color:${s.color}">${s.name}</div>
-                      <div class="lesson-detail">${s.teacher} &middot; ${l.room}</div>
+                      <div class="lesson-detail">${teacher ? `${esc(teacher)} &middot; ` : ''}${esc(l.room)}</div>
                       <div class="lesson-actions">
                         <button class="lesson-action-btn" onclick="event.stopPropagation();openEditLessonModal('${day}',${li})" title="Bewerken">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -309,7 +330,7 @@ function switchDay(index) {
 }
 
 function openAddLessonModal() {
-  const subjectOptions = Object.entries(subjects).map(([key, s]) =>
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
     `<option value="${key}">${s.name}</option>`
   ).join('');
   const dayOptions = dayNames.map(d => `<option value="${d}">${d.charAt(0).toUpperCase() + d.slice(1)}</option>`).join('');
@@ -323,14 +344,7 @@ function openAddLessonModal() {
       <div class="form-group">
         <label class="form-label">Uur</label>
         <select class="form-select" id="lesson-hour" required>
-          <option value="1">1e uur (08:30 - 09:20)</option>
-          <option value="2">2e uur (09:20 - 10:10)</option>
-          <option value="3">3e uur (10:30 - 11:20)</option>
-          <option value="4">4e uur (11:20 - 12:10)</option>
-          <option value="5">5e uur (12:10 - 13:00)</option>
-          <option value="6">6e uur (12:40 - 13:30)</option>
-          <option value="7">7e uur (13:30 - 14:20)</option>
-          <option value="8">8e uur (14:20 - 15:10)</option>
+          ${Object.entries(lessonHourTimes()).map(([h, t]) => `<option value="${h}">${h}e uur (${t})</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -351,11 +365,6 @@ function openAddLessonModal() {
   `);
 }
 
-const hourTimes = {
-  1: '08:30 - 09:20', 2: '09:20 - 10:10', 3: '10:30 - 11:20', 4: '11:20 - 12:10',
-  5: '12:10 - 13:00', 6: '12:40 - 13:30', 7: '13:30 - 14:20', 8: '14:20 - 15:10'
-};
-
 function addLesson(e) {
   e.preventDefault();
   const day = document.getElementById('lesson-day').value;
@@ -365,7 +374,7 @@ function addLesson(e) {
 
   if (day && hour && subject && room) {
     if (!schedule[day]) schedule[day] = [];
-    schedule[day].push({ hour, time: hourTimes[hour], subject, room });
+    schedule[day].push({ hour, time: lessonHourTimes()[hour], subject, room });
     schedule[day].sort((a, b) => a.hour - b.hour);
     saveSchedule();
     closeModal();
@@ -375,7 +384,7 @@ function addLesson(e) {
 
 function openEditLessonModal(day, index) {
   const lesson = schedule[day][index];
-  const subjectOptions = Object.entries(subjects).map(([key, s]) =>
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
     `<option value="${key}" ${key === lesson.subject ? 'selected' : ''}>${s.name}</option>`
   ).join('');
 
@@ -384,7 +393,7 @@ function openEditLessonModal(day, index) {
       <div class="form-group">
         <label class="form-label">Uur</label>
         <select class="form-select" id="edit-lesson-hour" required>
-          ${Object.entries(hourTimes).map(([h, t]) =>
+          ${Object.entries(lessonHourTimes()).map(([h, t]) =>
             `<option value="${h}" ${parseInt(h) === lesson.hour ? 'selected' : ''}>${h}e uur (${t})</option>`
           ).join('')}
         </select>
@@ -395,7 +404,7 @@ function openEditLessonModal(day, index) {
       </div>
       <div class="form-group">
         <label class="form-label">Lokaal</label>
-        <input type="text" class="form-input" id="edit-lesson-room" value="${lesson.room}" required>
+        <input type="text" class="form-input" id="edit-lesson-room" value="${esc(lesson.room)}" required>
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">
         Opslaan
@@ -410,7 +419,7 @@ function editLesson(e, day, index) {
   const subject = document.getElementById('edit-lesson-subject').value;
   const room = document.getElementById('edit-lesson-room').value;
 
-  schedule[day][index] = { hour, time: hourTimes[hour], subject, room };
+  schedule[day][index] = { hour, time: lessonHourTimes()[hour], subject, room };
   schedule[day].sort((a, b) => a.hour - b.hour);
   saveSchedule();
   closeModal();
@@ -450,6 +459,7 @@ function openMagisterModal(source) {
         </button>
       ` : `
         <p class="connect-desc">Koppel je Magister account om je gegevens automatisch te importeren en up-to-date te houden.</p>
+        <div class="demo-note">&#9888;&#65039; Demo: er wordt geen echte verbinding gemaakt. Vul hier <strong>niet</strong> je echte Magister-wachtwoord in.</div>
         <form onsubmit="connectMagister(event)">
           <div class="form-group">
             <label class="form-label">School</label>
@@ -532,7 +542,7 @@ function renderHuiswerk() {
               ${renderCheckbox(h.done, h.id, 'hw')}
               ${renderSubjectBadge(h.subject)}
               <div class="hw-info">
-                <div class="hw-title">${h.title}</div>
+                <div class="hw-title">${esc(h.title)}</div>
                 <div class="hw-due ${due.urgent ? 'urgent' : ''}">${due.text}</div>
               </div>
             </div>
@@ -559,7 +569,7 @@ function toggleHomework(id) {
 }
 
 function openAddHomeworkModal() {
-  const subjectOptions = Object.entries(subjects).map(([key, s]) =>
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
     `<option value="${key}">${s.name}</option>`
   ).join('');
 
@@ -657,10 +667,10 @@ function renderToetsen() {
                   </button>
                 </div>
               </div>
-              <div class="test-title">${t.title}</div>
+              <div class="test-title">${esc(t.title)}</div>
               <div class="test-meta">
                 <span class="test-meta-item">${icon('calendar', 14)} ${formatDate(t.date)}</span>
-                <span class="test-meta-item">${icon('book', 14)} ${t.chapter}</span>
+                <span class="test-meta-item">${icon('book', 14)} ${esc(t.chapter)}</span>
               </div>
             </div>
           `;
@@ -671,7 +681,7 @@ function renderToetsen() {
 }
 
 function openAddTestModal() {
-  const subjectOptions = Object.entries(subjects).map(([key, s]) =>
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
     `<option value="${key}">${s.name}</option>`
   ).join('');
 
@@ -722,7 +732,7 @@ function addTest(e) {
 function openEditTestModal(id) {
   const t = tests.find(x => x.id === id);
   if (!t) return;
-  const subjectOptions = Object.entries(subjects).map(([key, s]) =>
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
     `<option value="${key}" ${key === t.subject ? 'selected' : ''}>${s.name}</option>`
   ).join('');
   const dateVal = new Date(t.date);
@@ -736,7 +746,7 @@ function openEditTestModal(id) {
       </div>
       <div class="form-group">
         <label class="form-label">Titel</label>
-        <input type="text" class="form-input" id="edit-test-title" value="${t.title}" required>
+        <input type="text" class="form-input" id="edit-test-title" value="${esc(t.title)}" required>
       </div>
       <div class="form-group">
         <label class="form-label">Datum</label>
@@ -744,7 +754,7 @@ function openEditTestModal(id) {
       </div>
       <div class="form-group">
         <label class="form-label">Hoofdstuk / Stof</label>
-        <input type="text" class="form-input" id="edit-test-chapter" value="${t.chapter}" required>
+        <input type="text" class="form-input" id="edit-test-chapter" value="${esc(t.chapter)}" required>
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">
         Opslaan
@@ -898,7 +908,7 @@ function renderAgenda() {
                 <div class="event-item">
                   <span class="event-time">${e.time}</span>
                   <div class="event-info">
-                    <div class="event-title">${e.title}</div>
+                    <div class="event-title">${esc(e.title)}</div>
                     <span class="event-type-badge" style="background:${typeInfo.bg};color:${typeInfo.text}">${typeInfo.label}</span>
                   </div>
                   <div class="event-actions">
@@ -929,7 +939,7 @@ function renderAgenda() {
                 <div class="event-item" style="cursor:pointer" onclick="selectAgendaDate(${new Date(e.date).getFullYear()},${new Date(e.date).getMonth()},${new Date(e.date).getDate()})">
                   <span class="event-time">${due.text}</span>
                   <div class="event-info">
-                    <div class="event-title">${e.title}</div>
+                    <div class="event-title">${esc(e.title)}</div>
                     <span class="event-type-badge" style="background:${typeInfo.bg};color:${typeInfo.text}">${typeInfo.label}</span>
                   </div>
                 </div>
@@ -1021,7 +1031,7 @@ function openEditEventModal(id) {
     <form onsubmit="editEvent(event,${id})">
       <div class="form-group">
         <label class="form-label">Titel</label>
-        <input type="text" class="form-input" id="edit-event-title" value="${ev.title}" required>
+        <input type="text" class="form-input" id="edit-event-title" value="${esc(ev.title)}" required>
       </div>
       <div class="form-group">
         <label class="form-label">Datum</label>
@@ -1029,7 +1039,7 @@ function openEditEventModal(id) {
       </div>
       <div class="form-group">
         <label class="form-label">Tijd</label>
-        <input type="text" class="form-input" id="edit-event-time" value="${ev.time}" required>
+        <input type="text" class="form-input" id="edit-event-time" value="${esc(ev.time)}" required>
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
@@ -1111,6 +1121,7 @@ function openCalendarLoginModal(key) {
         <span style="font-size:48px;color:${app.color}">${app.icon}</span>
       </div>
       <p class="connect-desc">Log in met je ${app.name} account om je agenda te synchroniseren.</p>
+      <div class="demo-note">&#9888;&#65039; Demo: er wordt geen echte verbinding gemaakt. Vul hier <strong>niet</strong> je echte wachtwoord in.</div>
       <form onsubmit="connectCalendar(event, '${key}')">
         <div class="form-group">
           <label class="form-label">E-mailadres</label>
@@ -1152,9 +1163,11 @@ function disconnectCalendar(key) {
 
 // ==================== CIJFERS ====================
 function renderCijfers() {
-  const overallAvg = getOverallAverage();
-  const allGrades = Object.values(grades).flatMap(s => s.grades);
-  const highest = Math.max(...allGrades).toFixed(1);
+  loadGrades();
+  const entries = Object.entries(grades).filter(([id, d]) => subjects[id] && d.grades.length);
+  const allGrades = entries.flatMap(([, s]) => s.grades);
+  const overallAvg = getAverage(allGrades);
+  const highest = allGrades.length ? Math.max(...allGrades).toFixed(1) : '-';
   const totalTests = allGrades.length;
 
   return `
@@ -1165,10 +1178,18 @@ function renderCijfers() {
             <h1>Cijfers</h1>
             <p>Overzicht van al je cijfers</p>
           </div>
-          <button class="btn ${magistarConnected ? 'btn-magister-connected' : 'btn-magister'} btn-sm" onclick="openMagisterModal('cijfers')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            ${magistarConnected ? 'Magister gekoppeld' : 'Koppel Magister'}
-          </button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="openAddGradeModal()">
+              ${icon('plus', 14)} Cijfer toevoegen
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="openPasteGradesModal()">
+              &#128203; Plak uit Magister
+            </button>
+            <button class="btn ${magistarConnected ? 'btn-magister-connected' : 'btn-magister'} btn-sm" onclick="openMagisterModal('cijfers')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              ${magistarConnected ? 'Magister gekoppeld' : 'Koppel Magister'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1188,8 +1209,14 @@ function renderCijfers() {
       </div>
 
       <div id="grades-list">
-        ${Object.entries(grades).map(([subjectId, data]) => {
+        ${entries.length === 0 ? `
+          <div class="card"><div class="empty-state">
+            <p>Nog geen cijfers. Voeg je eerste cijfer toe!</p>
+            <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="openAddGradeModal()">${icon('plus', 14)} Cijfer toevoegen</button>
+          </div></div>
+        ` : entries.map(([subjectId, data]) => {
           const s = subjects[subjectId];
+          const teacher = subjectTeacher(subjectId);
           const avg = getAverage(data.grades);
           const avgNum = parseFloat(avg);
           const avgClass = avgNum >= 7 ? 'grade-good' : avgNum >= 5.5 ? 'grade-ok' : 'grade-bad';
@@ -1199,7 +1226,7 @@ function renderCijfers() {
               <div class="subject-row-header" onclick="toggleGrades('${subjectId}')">
                 <div class="subject-color-bar" style="background:${s.color}"></div>
                 <div class="subject-name">${s.name}</div>
-                <div class="subject-teacher">${s.teacher}</div>
+                <div class="subject-teacher">${esc(teacher)}</div>
                 <div class="subject-average ${avgClass}" style="padding:2px 10px;border-radius:6px">${avg}</div>
                 <div class="subject-chevron" id="chevron-${subjectId}">${icons.chevronDown}</div>
               </div>
@@ -1208,8 +1235,16 @@ function renderCijfers() {
                   const gClass = g >= 7 ? 'grade-good' : g >= 5.5 ? 'grade-ok' : 'grade-bad';
                   return `
                     <div class="grade-row">
-                      <span class="grade-desc">${data.descriptions[i]}</span>
+                      <span class="grade-desc">${esc(data.descriptions[i])}</span>
                       <span class="grade-value ${gClass}">${g.toFixed(1)}</span>
+                      <div class="grade-actions">
+                        <button class="lesson-action-btn" onclick="event.stopPropagation();openEditGradeModal('${subjectId}',${i})" title="Bewerken">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                        </button>
+                        <button class="lesson-action-btn delete" onclick="event.stopPropagation();deleteGrade('${subjectId}',${i})" title="Verwijderen">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+                        </button>
+                      </div>
                     </div>
                   `;
                 }).join('')}
@@ -1220,6 +1255,173 @@ function renderCijfers() {
       </div>
     </div>
   `;
+}
+
+function openAddGradeModal() {
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}">${s.name}</option>`).join('');
+  openModal('Cijfer toevoegen', `
+    <form onsubmit="addGrade(event)">
+      <div class="form-group">
+        <label class="form-label">Vak</label>
+        <select class="form-select" id="grade-subject" required>
+          <option value="">Kies een vak...</option>
+          ${subjectOptions}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Omschrijving</label>
+        <input type="text" class="form-input" id="grade-desc" placeholder="Bijv. Proefwerk H5" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cijfer</label>
+        <input type="number" class="form-input" id="grade-value" min="1" max="10" step="0.1" placeholder="Bijv. 7,5" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">
+        ${icon('plus', 16)} Toevoegen
+      </button>
+    </form>
+  `);
+}
+
+function addGrade(e) {
+  e.preventDefault();
+  const subject = document.getElementById('grade-subject').value;
+  const desc = document.getElementById('grade-desc').value.trim();
+  const value = parseFloat(document.getElementById('grade-value').value);
+  if (!subject || !desc || isNaN(value) || value < 1 || value > 10) return;
+  if (!grades[subject]) grades[subject] = { grades: [], descriptions: [] };
+  grades[subject].grades.push(Math.round(value * 10) / 10);
+  grades[subject].descriptions.push(desc);
+  saveGrades();
+  closeModal();
+  renderPage('cijfers');
+}
+
+// --- Cijfers plakken uit Magister ---
+let pastedGradeRows = [];
+
+function openPasteGradesModal() {
+  pastedGradeRows = [];
+  openModal('Cijfers plakken uit Magister', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 10px">
+      Open Magister &rarr; Cijfers, selecteer je cijferoverzicht met de muis, kopieer (Cmd+C / Ctrl+C) en plak het hieronder (Cmd+V / Ctrl+V). De app herkent vakken en cijfers automatisch — je controleert het resultaat voordat het wordt opgeslagen.
+    </p>
+    <textarea class="form-input" id="paste-grades-input" rows="8" placeholder="Plak hier je cijfers uit Magister...&#10;&#10;Bijvoorbeeld:&#10;ne&#9;Boekverslag&#9;7,5&#10;wb&#9;PW H5&#9;6,8" style="resize:vertical;font-family:monospace;font-size:0.82rem"></textarea>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" onclick="previewPastedGrades()">
+      Herken cijfers
+    </button>
+    <div id="paste-grades-preview"></div>
+  `);
+}
+
+function previewPastedGrades() {
+  const text = document.getElementById('paste-grades-input').value;
+  pastedGradeRows = parsePastedGrades(text);
+  const box = document.getElementById('paste-grades-preview');
+  if (!box) return;
+
+  if (!pastedGradeRows.length) {
+    box.innerHTML = '<p style="color:#B91C1C;font-size:0.85rem;margin-top:12px">Geen cijfers herkend. Controleer of er per regel een cijfer (zoals 7,5) in staat. Je kunt cijfers ook los toevoegen via "Cijfer toevoegen".</p>';
+    return;
+  }
+
+  const subjectOptions = (sel) => mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}" ${key === sel ? 'selected' : ''}>${s.name}</option>`).join('');
+
+  box.innerHTML = `
+    <p style="font-weight:600;margin:16px 0 8px">${pastedGradeRows.length} cijfer${pastedGradeRows.length !== 1 ? 's' : ''} herkend — controleer en pas aan:</p>
+    <div class="paste-preview-list">
+      ${pastedGradeRows.map((r, i) => `
+        <div class="paste-preview-row">
+          <select class="form-select" onchange="pastedGradeRows[${i}].subject=this.value">
+            <option value="" ${!r.subject ? 'selected' : ''}>Kies vak...</option>
+            ${subjectOptions(r.subject)}
+          </select>
+          <input type="text" class="form-input" value="${esc(r.desc)}" onchange="pastedGradeRows[${i}].desc=this.value">
+          <input type="number" class="form-input paste-grade-num" min="1" max="10" step="0.1" value="${r.grade}" onchange="pastedGradeRows[${i}].grade=parseFloat(this.value)">
+          <button class="lesson-action-btn delete" onclick="pastedGradeRows.splice(${i},1);previewPastedGrades()" title="Niet importeren">${icons.x}</button>
+        </div>
+      `).join('')}
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" onclick="importPastedGrades()">
+      ${icon('plus', 16)} Importeer ${pastedGradeRows.length} cijfer${pastedGradeRows.length !== 1 ? 's' : ''}
+    </button>
+  `;
+}
+
+function importPastedGrades() {
+  const valid = pastedGradeRows.filter(r => r.subject && r.desc && !isNaN(r.grade) && r.grade >= 1 && r.grade <= 10);
+  if (!valid.length) { alert('Kies bij elk cijfer eerst een vak.'); return; }
+  valid.forEach(r => {
+    if (!grades[r.subject]) grades[r.subject] = { grades: [], descriptions: [] };
+    grades[r.subject].grades.push(Math.round(r.grade * 10) / 10);
+    grades[r.subject].descriptions.push(r.desc);
+  });
+  saveGrades();
+  pastedGradeRows = [];
+  closeModal();
+  renderPage('cijfers');
+}
+
+function deleteGrade(subjectId, index) {
+  if (!grades[subjectId]) return;
+  if (!confirm('Dit cijfer verwijderen?')) return;
+  grades[subjectId].grades.splice(index, 1);
+  grades[subjectId].descriptions.splice(index, 1);
+  if (grades[subjectId].grades.length === 0) delete grades[subjectId];
+  saveGrades();
+  renderPage('cijfers');
+}
+
+function openEditGradeModal(subjectId, index) {
+  const data = grades[subjectId];
+  if (!data) return;
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}" ${key === subjectId ? 'selected' : ''}>${s.name}</option>`).join('');
+  openModal('Cijfer bewerken', `
+    <form onsubmit="editGrade(event,'${subjectId}',${index})">
+      <div class="form-group">
+        <label class="form-label">Vak</label>
+        <select class="form-select" id="edit-grade-subject" required>${subjectOptions}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Omschrijving</label>
+        <input type="text" class="form-input" id="edit-grade-desc" value="${esc(data.descriptions[index])}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cijfer</label>
+        <input type="number" class="form-input" id="edit-grade-value" min="1" max="10" step="0.1" value="${data.grades[index]}" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Opslaan</button>
+    </form>
+  `);
+}
+
+function editGrade(e, subjectId, index) {
+  e.preventDefault();
+  const data = grades[subjectId];
+  if (!data) return;
+  const newSubject = document.getElementById('edit-grade-subject').value;
+  const desc = document.getElementById('edit-grade-desc').value.trim();
+  const value = parseFloat(document.getElementById('edit-grade-value').value);
+  if (!newSubject || !desc || isNaN(value) || value < 1 || value > 10) return;
+
+  if (newSubject === subjectId) {
+    data.descriptions[index] = desc;
+    data.grades[index] = Math.round(value * 10) / 10;
+  } else {
+    // Verplaatst naar een ander vak
+    data.grades.splice(index, 1);
+    data.descriptions.splice(index, 1);
+    if (data.grades.length === 0) delete grades[subjectId];
+    if (!grades[newSubject]) grades[newSubject] = { grades: [], descriptions: [] };
+    grades[newSubject].grades.push(Math.round(value * 10) / 10);
+    grades[newSubject].descriptions.push(desc);
+  }
+  saveGrades();
+  closeModal();
+  renderPage('cijfers');
 }
 
 function toggleGrades(subjectId) {
@@ -1276,19 +1478,53 @@ function renderInstellingen() {
           <div class="settings-section">
             <div class="form-group">
               <label class="form-label">Naam</label>
-              <input type="text" class="form-input" id="setting-name" value="${appSettings.userName}" onchange="updateSetting('userName', this.value)">
+              <input type="text" class="form-input" id="setting-name" value="${esc(appSettings.userName)}" onchange="updateSetting('userName', this.value)">
             </div>
             <div class="form-group">
               <label class="form-label">E-mail</label>
-              <input type="email" class="form-input" id="setting-email" value="${appSettings.userEmail}" onchange="updateSetting('userEmail', this.value)">
+              <input type="email" class="form-input" id="setting-email" value="${esc(appSettings.userEmail)}" onchange="updateSetting('userEmail', this.value)">
             </div>
             <div class="form-group">
               <label class="form-label">Klas</label>
-              <input type="text" class="form-input" id="setting-class" value="${appSettings.userClass}" onchange="updateSetting('userClass', this.value)">
+              <input type="text" class="form-input" id="setting-class" value="${esc(appSettings.userClass)}" onchange="updateSetting('userClass', this.value)">
             </div>
             <div class="form-group">
               <label class="form-label">School</label>
-              <input type="text" class="form-input" id="setting-school" value="${appSettings.schoolName}" onchange="updateSetting('schoolName', this.value)">
+              <input type="text" class="form-input" id="setting-school" value="${esc(appSettings.schoolName)}" onchange="updateSetting('schoolName', this.value)">
+            </div>
+          </div>
+        </div>
+
+        <!-- Mijn vakken & niveau -->
+        <div class="card settings-card">
+          <div class="card-header">
+            <div class="card-title">
+              ${icon('bookOpen')} Mijn vakken &amp; niveau
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="form-group">
+              <label class="form-label">Examenniveau</label>
+              <select class="form-select" id="setting-level" onchange="updateExamLevel(this.value)">
+                ${Object.entries(examLevels).map(([k, v]) => `<option value="${k}" ${(appSettings.examLevel || 'vwo') === k ? 'selected' : ''}>${v}</option>`).join('')}
+              </select>
+              <span class="form-hint">Kies je niveau; hieronder verschijnen alle vakken die daarbij horen.</span>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Welke vakken heb jij? (${mySubjectKeys().length} gekozen)</label>
+              <div class="subject-picker">${renderSubjectPicker()}</div>
+            </div>
+            <div class="form-group" style="margin:16px 0 0">
+              <label class="form-label">Docenten (optioneel)</label>
+              <div class="teacher-list">
+                ${mySubjectEntries().map(([key, s]) => `
+                  <div class="teacher-row">
+                    <span class="teacher-subject">${s.icon} ${s.name}</span>
+                    <input type="text" class="form-input teacher-input" placeholder="Naam docent..."
+                      value="${esc(subjectTeacher(key))}" onchange="updateTeacher('${key}', this.value)">
+                  </div>
+                `).join('')}
+              </div>
             </div>
           </div>
         </div>
@@ -1405,6 +1641,13 @@ function renderInstellingen() {
               </div>
             </div>
           </div>
+          ${!isDemoCleared() ? `
+          <div style="margin-top:16px">
+            <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="confirmClearDemo()">
+              &#129529; Wis voorbeelddata
+            </button>
+            <span class="form-hint" style="text-align:center">Verwijdert het demo-huiswerk, -toetsen, -events, -taken en -cijfers, zodat alleen jouw eigen invoer overblijft.</span>
+          </div>` : ''}
           <div style="margin-top:16px">
             <button class="btn btn-outline" style="width:100%;justify-content:center;color:#EF4444;border-color:#FCA5A5" onclick="handleLogout()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -1424,6 +1667,47 @@ function updateSetting(key, value) {
   if (key === 'userName') {
     document.getElementById('navbar').innerHTML = renderNavbar();
   }
+}
+
+function confirmClearDemo() {
+  if (!confirm('Alle voorbeelddata wissen? Je eigen toegevoegde huiswerk, toetsen en events blijven bewaard; demo-taken en demo-cijfers verdwijnen.')) return;
+  clearDemoData();
+  renderPage('instellingen');
+}
+
+// --- Vakken & niveau ---
+function renderSubjectPicker() {
+  const level = appSettings.examLevel || 'vwo';
+  const mine = new Set(mySubjectKeys());
+  const keys = subjectsForLevel(level).sort((a, b) => subjects[a].name.localeCompare(subjects[b].name, 'nl'));
+  return keys.map(k => {
+    const s = subjects[k];
+    const on = mine.has(k);
+    return `
+      <button type="button" class="subject-pick ${on ? 'on' : ''}" onclick="toggleMySubject('${k}')">
+        <span class="subject-pick-icon">${s.icon}</span>
+        <span class="subject-pick-name">${s.name}</span>
+        ${on ? `<span class="subject-pick-check">${icons.check}</span>` : ''}
+      </button>`;
+  }).join('');
+}
+
+function updateExamLevel(level) {
+  appSettings.examLevel = level;
+  // Behoud alleen gekozen vakken die op het nieuwe niveau bestaan
+  const valid = new Set(subjectsForLevel(level));
+  appSettings.mySubjects = mySubjectKeys().filter(k => valid.has(k));
+  saveSettings();
+  renderPage('instellingen');
+}
+
+function toggleMySubject(key) {
+  const set = new Set(mySubjectKeys());
+  if (set.has(key)) set.delete(key);
+  else set.add(key);
+  appSettings.mySubjects = Array.from(set);
+  saveSettings();
+  renderPage('instellingen');
 }
 
 function generateTimetablePreview() {
@@ -1456,4 +1740,786 @@ function generateTimetablePreview() {
   }
 
   return `<div class="timetable-preview">${rows}</div>`;
+}
+
+// ==================== PLANNER (toetsweek & examen) ====================
+function renderPlanner() {
+  loadPlans();
+
+  // Actief plan = expliciet gekozen, anders eerstvolgende met deadline >= vandaag
+  let plan = activePlanId != null ? getPlan(activePlanId) : null;
+  if (!plan) {
+    const upcoming = [...plans]
+      .filter(p => startOfDay(new Date(p.examDate)) >= startOfDay(today))
+      .sort((a, b) => new Date(a.examDate) - new Date(b.examDate));
+    plan = upcoming[0] || plans[0];
+    if (plan) activePlanId = plan.id;
+  }
+
+  return `
+    <div class="page-content">
+      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <h1>Planner</h1>
+          <p>Je route naar toetsweken &amp; examens — plan vooruit en blijf op schema</p>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openAddPlanModal()">
+          ${icon('plus', 14)} Nieuwe planning
+        </button>
+      </div>
+
+      ${plans.length === 0 ? renderPlannerEmpty() : `
+        ${renderPlanSelector(plan)}
+        ${plan ? renderPlanDetail(plan) : ''}
+      `}
+    </div>
+  `;
+}
+
+function renderPlannerEmpty() {
+  return `
+    <div class="card">
+      <div class="empty-state">
+        <div style="font-size:2.5rem;margin-bottom:8px">🎯</div>
+        <h3 style="margin:0 0 6px">Nog geen planning</h3>
+        <p style="margin:0 0 16px;color:var(--gray-500)">Maak een planning voor je aankomende toetsweek of examen.<br>Vul je beschikbare tijd en taken in, dan rekenen wij uit of je op schema loopt.</p>
+        <button class="btn btn-primary" onclick="openAddPlanModal()">${icon('plus', 16)} Nieuwe planning maken</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderPlanSelector(activePlan) {
+  if (plans.length <= 1) return '';
+  const sorted = [...plans].sort((a, b) => new Date(a.examDate) - new Date(b.examDate));
+  return `
+    <div class="plan-selector">
+      ${sorted.map(p => `
+        <button class="plan-chip ${activePlan && p.id === activePlan.id ? 'active' : ''}" onclick="selectPlan(${p.id})">
+          <span class="plan-chip-type ${p.type}">${p.type === 'examen' ? 'Examen' : 'Toetsweek'}</span>
+          ${esc(p.name)}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function selectPlan(id) {
+  activePlanId = id;
+  savePlans();
+  renderPage('planner');
+}
+
+function renderPlanDetail(plan) {
+  const st = planStatus(plan);
+  const lbl = statusLabel(st);
+  const examD = planExamDate(plan);
+
+  return `
+    <!-- Overzicht / status -->
+    <div class="card plan-overview">
+      <div class="plan-overview-head">
+        <div>
+          <span class="plan-chip-type ${plan.type}" style="margin-bottom:6px;display:inline-block">${plan.type === 'examen' ? 'Examen' : 'Toetsweek'}</span>
+          <h2 style="margin:0">${esc(plan.name)}</h2>
+          <p style="margin:4px 0 0;color:var(--gray-500)">
+            ${plan.type === 'examen' ? 'Examen' : 'Eerste toets'} op ${formatDate(examD)}
+            ${plan.readyDaysBefore > 0 ? ` · klaar willen zijn ${plan.readyDaysBefore} dag${plan.readyDaysBefore !== 1 ? 'en' : ''} van tevoren` : ''}
+          </p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="lesson-action-btn" onclick="openEditPlanModal(${plan.id})" title="Bewerken">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
+          <button class="lesson-action-btn delete" onclick="deletePlan(${plan.id})" title="Verwijderen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="plan-status-banner ${lbl.cls}">
+        <div class="plan-status-main">
+          <span class="plan-status-icon">${st.pct >= 100 ? '🎉' : lbl.cls === 'behind' ? '⚠️' : lbl.cls === 'ahead' ? '🚀' : '✅'}</span>
+          <div>
+            <div class="plan-status-text">${lbl.text}</div>
+            <div class="plan-status-sub">${st.totalNeeded === 0 ? 'Voeg taken toe om je planning te starten' : `${fmtHours(st.totalDone)} van ${fmtHours(st.totalNeeded)} gedaan`}</div>
+          </div>
+        </div>
+        ${st.totalNeeded > 0 ? renderCircularProgress(st.pct, 72, 6) : ''}
+      </div>
+
+      <div class="plan-stats">
+        <div class="plan-stat">
+          <div class="plan-stat-value">${st.daysToDeadline >= 0 ? st.daysToDeadline : 0}</div>
+          <div class="plan-stat-label">dagen tot deadline</div>
+        </div>
+        <div class="plan-stat">
+          <div class="plan-stat-value">${Math.max(0, st.daysToExam)}</div>
+          <div class="plan-stat-label">dagen tot ${plan.type === 'examen' ? 'examen' : 'toetsweek'}</div>
+        </div>
+        <div class="plan-stat">
+          <div class="plan-stat-value">${fmtHours(st.remaining).replace(' uur', '')}</div>
+          <div class="plan-stat-label">uur te gaan</div>
+        </div>
+        <div class="plan-stat ${st.overflow > 0 ? 'warn' : ''}">
+          <div class="plan-stat-value">${st.overflow > 0 ? fmtHours(st.overflow).replace(' uur', '') : Math.round(st.sched.totalCapacity)}</div>
+          <div class="plan-stat-label">${st.overflow > 0 ? 'uur te weinig tijd' : 'uur beschikbaar'}</div>
+        </div>
+      </div>
+      ${st.overflow > 0 ? `<div class="plan-warning">${icon('clock', 14)} Je hebt ${fmtHours(st.overflow)} te weinig ingepland. Voeg beschikbare tijd toe of verlaag je taakuren.</div>` : ''}
+    </div>
+
+    ${renderExamSchedule(plan)}
+
+    <div class="plan-columns">
+      <!-- Taken -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">${icon('listChecks')} Wat moet je doen</div>
+          <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${plan.id})">${icon('plus', 14)} Taak</button>
+        </div>
+        ${plan.tasks.length === 0
+          ? '<div class="empty-state empty-state-compact"><p>Nog geen taken. Voeg toe wat je moet doen en hoelang het duurt.</p></div>'
+          : plan.tasks.map(t => renderTaskRow(plan, t)).join('')}
+      </div>
+
+      <!-- Beschikbare tijd -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">${icon('clock')} Beschikbare tijd</div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px">
+          <label class="form-label">Standaard uren per dag</label>
+          <input type="number" class="form-input" min="0" max="16" step="0.5" value="${plan.defaultDailyHours}"
+            onchange="updatePlanField(${plan.id},'defaultDailyHours',Math.max(0,parseFloat(this.value)||0))">
+          <span class="form-hint">Pas hieronder losse dagen aan (bijv. weekend meer, drukke dag minder).</span>
+        </div>
+        <div class="availability-list">
+          ${renderAvailabilityRows(plan)}
+        </div>
+      </div>
+    </div>
+
+    <!-- Gegenereerd schema -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${icon('calendar')} Jouw studieschema</div>
+        <span style="font-size:0.8rem;color:var(--gray-400)">automatisch verdeeld</span>
+      </div>
+      ${renderPlanScheduleView(plan, st.sched)}
+    </div>
+  `;
+}
+
+function renderTaskRow(plan, t) {
+  const s = subjects[t.subject];
+  const done = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
+  const pct = t.hours > 0 ? Math.round((done / t.hours) * 100) : 0;
+  const isDone = pct >= 100;
+  return `
+    <div class="plan-task ${isDone ? 'done' : ''}">
+      <div class="plan-task-top">
+        <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
+        <div class="plan-task-info">
+          <div class="plan-task-title ${isDone ? 'done' : ''}">${esc(t.title)}</div>
+          <div class="plan-task-sub">${s ? s.name : 'Algemeen'} · ${fmtHours(done)} / ${fmtHours(t.hours)}</div>
+        </div>
+        <div class="plan-task-actions">
+          ${!isDone ? `<button class="btn btn-outline btn-sm plan-log-btn" onclick="openLogHoursModal(${plan.id},${t.id})">${icon('clock', 13)} Uren loggen</button>` : ''}
+          <button class="lesson-action-btn ${isDone ? 'done-btn' : ''}" onclick="toggleTaskDone(${plan.id},${t.id})" title="${isDone ? 'Niet klaar' : 'Klaar'}">${icons.check}</button>
+          <button class="lesson-action-btn delete" onclick="deleteTask(${plan.id},${t.id})" title="Verwijderen">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="plan-task-bar"><div class="plan-task-bar-fill" style="width:${pct}%;background:${s ? s.color : 'var(--accent)'}"></div></div>
+    </div>
+  `;
+}
+
+let availExpanded = false;
+
+function toggleAvailExpanded(planId) {
+  availExpanded = !availExpanded;
+  renderPage('planner');
+}
+
+function renderAvailabilityRows(plan) {
+  const today0 = startOfDay(today);
+  const deadline = planDeadline(plan);
+  if (deadline < today0) return '<p style="color:var(--gray-400);font-size:0.85rem">De deadline is verstreken.</p>';
+
+  const totalDays = Math.min(60, daysBetween(today0, deadline) + 1);
+  const maxRows = availExpanded ? 60 : Math.min(7, totalDays);
+
+  const dayShort = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
+  let rows = '';
+  let count = 0;
+  for (let d = new Date(today0); d <= deadline && count < maxRows; d = addDays(d, 1), count++) {
+    const key = dateKey(d);
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const slots = daySlots(plan, d);
+    const hasSlots = slots.length > 0;
+    const val = availabilityFor(plan, d);
+    const overridden = !hasSlots && plan.availability && plan.availability[key] != null;
+    rows += `
+      <div class="availability-row ${isWeekend ? 'weekend' : ''}">
+        <div class="availability-main">
+          <span class="availability-day">${dayShort[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}</span>
+          <input type="number" class="availability-input ${overridden ? 'override' : ''}" min="0" max="16" step="0.5" value="${val}" ${hasSlots ? 'disabled title="Bepaald door tijdblokken"' : 'title="Beschikbare uren"'}
+            onchange="setAvailability(${plan.id},'${key}',this.value)">
+          <span class="availability-unit">uur</span>
+          <button class="availability-slot-btn" onclick="openSlotModal(${plan.id},'${key}')" title="Specifieke tijd kiezen">${icon('clock', 13)} tijd</button>
+        </div>
+        ${hasSlots ? `<div class="availability-slots">${slots.map((s, i) => `<span class="slot-chip">${s.start}–${s.end}<button onclick="removeSlot(${plan.id},'${key}',${i})" title="Verwijderen">&times;</button></span>`).join('')}</div>` : ''}
+      </div>`;
+  }
+  if (totalDays > 7) {
+    rows += `<button class="availability-more-btn" onclick="toggleAvailExpanded(${plan.id})">${availExpanded ? 'Toon minder' : `Toon alle ${totalDays} dagen`}</button>`;
+  }
+  return rows;
+}
+
+// Compacte weekbalk: geplande uren per dag voor de komende 7 dagen
+function renderWeekStrip(sched) {
+  const today0 = startOfDay(today);
+  const dayShort = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
+  const cells = [];
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(today0, i);
+    const day = sched.days.find(x => +x.date === +d);
+    const hours = day ? day.used : 0;
+    cells.push(`
+      <div class="week-strip-cell ${i === 0 ? 'today' : ''} ${hours === 0 ? 'free' : ''}">
+        <span class="week-strip-day">${i === 0 ? 'Vandaag' : dayShort[d.getDay()] + ' ' + d.getDate()}</span>
+        <span class="week-strip-hours">${hours > 0 ? fmtHours(hours).replace(' uur', '') + 'u' : 'vrij'}</span>
+      </div>`);
+  }
+  return `<div class="week-strip">${cells.join('')}</div>`;
+}
+
+function renderPlanScheduleView(plan, sched) {
+  const daysWithWork = sched.days.filter(d => d.assignments.length > 0);
+  if (daysWithWork.length === 0) {
+    return '<div class="empty-state empty-state-compact"><p>Voeg taken en beschikbare tijd toe — dan verschijnt hier je dagindeling.</p></div>';
+  }
+  const today0 = startOfDay(today);
+  return `
+    ${renderWeekStrip(sched)}
+    <div class="plan-schedule">
+      ${daysWithWork.map(d => {
+        const isToday = +d.date === +today0;
+        const isPast = d.date < today0;
+        return `
+          <div class="plan-schedule-day ${isToday ? 'today' : ''} ${isPast ? 'past' : ''}">
+            <div class="plan-schedule-date">
+              ${isToday ? '<span class="plan-today-badge">Vandaag</span>' : ''}
+              ${formatDate(d.date)}
+              <span class="plan-schedule-total">${fmtHours(d.used)}</span>
+            </div>
+            <div class="plan-schedule-items">
+              ${(d.timed && d.timed.length ? d.timed.map(a => {
+                const s = subjects[a.subject];
+                return `
+                  <div class="plan-schedule-item">
+                    <span class="plan-schedule-item-time">${a.start}–${a.end}</span>
+                    <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
+                    <span class="plan-schedule-item-title">${esc(a.title)}</span>
+                  </div>`;
+              }) : d.assignments.map(a => {
+                const s = subjects[a.subject];
+                return `
+                  <div class="plan-schedule-item">
+                    <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
+                    <span class="plan-schedule-item-title">${esc(a.title)}</span>
+                    <span class="plan-schedule-item-hours">${fmtHours(a.hours)}</span>
+                  </div>`;
+              })).join('')}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+// --- Examrooster ---
+function renderExamSchedule(plan) {
+  const exams = [...(plan.exams || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+  return `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${icon('fileText')} ${plan.type === 'examen' ? 'Examenrooster' : 'Toetsrooster'}</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="openImportTestsModal(${plan.id})">Importeer uit Toetsen</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddExamModal(${plan.id})">${icon('plus', 14)} ${plan.type === 'examen' ? 'Examen' : 'Toets'}</button>
+        </div>
+      </div>
+      ${exams.length === 0
+        ? '<div class="empty-state empty-state-compact"><p>Voeg de toetsen/examens van deze periode toe. De eerste datum bepaalt je deadline.</p></div>'
+        : exams.map(ex => {
+            const s = subjects[ex.subject];
+            const due = getDueText(new Date(ex.date));
+            return `
+              <div class="exam-row">
+                <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
+                <div class="exam-row-info">
+                  <div class="exam-row-title">${esc(ex.title) || (s ? s.name : 'Toets')}</div>
+                  <div class="exam-row-sub">${s ? s.name : ''} · ${formatDate(new Date(ex.date))}${ex.time ? ` · ${ex.time}` : ''}</div>
+                </div>
+                <span class="todo-due ${due.urgent ? 'urgent' : ''}">${due.text}</span>
+                <button class="lesson-action-btn delete" onclick="deleteExam(${plan.id},${ex.id})" title="Verwijderen">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+                </button>
+              </div>`;
+          }).join('')}
+    </div>
+  `;
+}
+
+function openAddExamModal(planId) {
+  const p = getPlan(planId);
+  const isExam = p && p.type === 'examen';
+  const opts = mySubjectEntries().map(([k, s]) => `<option value="${k}">${s.name}</option>`).join('');
+  openModal((isExam ? 'Examen' : 'Toets') + ' toevoegen', `
+    <form onsubmit="addExam(event,${planId})">
+      <div class="form-group">
+        <label class="form-label">Vak</label>
+        <select class="form-select" id="exam-subject" required>
+          <option value="">Kies een vak...</option>${opts}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Titel (optioneel)</label>
+        <input type="text" class="form-input" id="exam-title" placeholder="Bijv. Proefwerk H5">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Datum</label>
+        <input type="date" class="form-input" id="exam-date" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tijd (optioneel)</label>
+        <input type="time" class="form-input" id="exam-time">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Toevoegen</button>
+    </form>
+  `);
+}
+
+function addExam(e, planId) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const subject = document.getElementById('exam-subject').value;
+  const dateVal = document.getElementById('exam-date').value;
+  if (!subject || !dateVal) return;
+  if (!p.exams) p.exams = [];
+  const id = Math.max(0, ...p.exams.map(x => x.id)) + 1;
+  p.exams.push({
+    id, subject,
+    title: document.getElementById('exam-title').value.trim(),
+    date: new Date(dateVal).toISOString(),
+    time: document.getElementById('exam-time').value,
+  });
+  syncPlanExamDate(p);
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+// Importeer toetsen van de Toetsen-pagina in deze planning (geen dubbel werk)
+function openImportTestsModal(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  loadTests();
+  const existing = new Set((p.exams || []).map(x => `${x.subject}|${dateKey(new Date(x.date))}`));
+  const candidates = tests
+    .filter(t => startOfDay(new Date(t.date)) >= startOfDay(today))
+    .filter(t => !existing.has(`${t.subject}|${dateKey(new Date(t.date))}`))
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  if (!candidates.length) {
+    openModal('Importeer uit Toetsen', '<p style="color:var(--gray-500)">Geen nieuwe toetsen gevonden — alles van de Toetsen-pagina staat al in deze planning (of er zijn geen aankomende toetsen).</p>');
+    return;
+  }
+
+  openModal('Importeer uit Toetsen', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">Vink aan welke toetsen je aan deze planning wilt toevoegen.</p>
+    <form onsubmit="importTests(event,${planId})">
+      <div class="import-test-list">
+        ${candidates.map(t => {
+          const s = subjects[t.subject];
+          return `
+            <label class="import-test-row">
+              <input type="checkbox" name="import-test" value="${t.id}" checked>
+              <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
+              <span class="import-test-title">${esc(t.title)}</span>
+              <span class="import-test-date">${formatDateShort(new Date(t.date))}</span>
+            </label>`;
+        }).join('')}
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px">Importeren</button>
+    </form>
+  `);
+}
+
+function importTests(e, planId) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  if (!p.exams) p.exams = [];
+  const selected = Array.from(document.querySelectorAll('input[name="import-test"]:checked')).map(el => parseInt(el.value));
+  let nextId = Math.max(0, ...p.exams.map(x => x.id)) + 1;
+  selected.forEach(testId => {
+    const t = tests.find(x => x.id === testId);
+    if (!t) return;
+    p.exams.push({ id: nextId++, subject: t.subject, title: t.title, date: new Date(t.date).toISOString(), time: '' });
+  });
+  syncPlanExamDate(p);
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function deleteExam(planId, examId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  p.exams = (p.exams || []).filter(x => x.id !== examId);
+  syncPlanExamDate(p);
+  savePlans();
+  renderPage('planner');
+}
+
+// --- Tijdblokken (wanneer op de dag) ---
+function openSlotModal(planId, key) {
+  openModal('Wanneer heb je tijd?', `
+    <form onsubmit="addSlot(event,${planId},'${key}')">
+      <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">Kies een tijdblok waarop je deze dag kunt werken. Je kunt er meerdere toevoegen.</p>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Van</label>
+          <input type="time" class="form-input" id="slot-start" value="15:00" required>
+        </div>
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Tot</label>
+          <input type="time" class="form-input" id="slot-end" value="17:00" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px">${icon('plus', 16)} Tijdblok toevoegen</button>
+    </form>
+  `);
+}
+
+function addSlot(e, planId, key) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const start = document.getElementById('slot-start').value;
+  const end = document.getElementById('slot-end').value;
+  if (!start || !end || timeToMin(end) <= timeToMin(start)) { alert('Kies een geldige eindtijd na de starttijd.'); return; }
+  if (!p.slots) p.slots = {};
+  if (!p.slots[key]) p.slots[key] = [];
+  p.slots[key].push({ start, end });
+  p.slots[key].sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function removeSlot(planId, key, idx) {
+  const p = getPlan(planId);
+  if (!p || !p.slots || !p.slots[key]) return;
+  p.slots[key].splice(idx, 1);
+  if (p.slots[key].length === 0) delete p.slots[key];
+  savePlans();
+  renderPage('planner');
+}
+
+// --- Plan CRUD ---
+function planFormFields(p) {
+  const examD = p ? new Date(p.examDate) : addDays(today, 14);
+  const dateStr = dateKey(examD);
+  return `
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-select" id="plan-type">
+        <option value="toetsweek" ${p && p.type === 'toetsweek' ? 'selected' : ''}>Toetsweek</option>
+        <option value="examen" ${p && p.type === 'examen' ? 'selected' : ''}>Examen</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Naam</label>
+      <input type="text" class="form-input" id="plan-name" value="${p ? esc(p.name) : ''}" placeholder="Bijv. Toetsweek 3 of Eindexamen wiskunde" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Startdatum (eerste toets / examen)</label>
+      <input type="date" class="form-input" id="plan-date" value="${dateStr}" required>
+      <span class="form-hint">Het volledige rooster met alle toetsen/examens vul je daarna in de planner in.</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Klaar zijn (dagen van tevoren)</label>
+      <input type="number" class="form-input" id="plan-ready" min="0" max="30" value="${p ? p.readyDaysBefore : 1}">
+      <span class="form-hint">Zo lang vóór de datum wil je al helemaal klaar zijn.</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Standaard beschikbare uren per dag</label>
+      <input type="number" class="form-input" id="plan-daily" min="0" max="16" step="0.5" value="${p ? p.defaultDailyHours : 2}">
+    </div>
+  `;
+}
+
+function openAddPlanModal() {
+  openModal('Nieuwe planning', `
+    <form onsubmit="addPlan(event)">
+      ${planFormFields(null)}
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Aanmaken</button>
+    </form>
+  `);
+}
+
+function readPlanForm() {
+  return {
+    type: document.getElementById('plan-type').value,
+    name: document.getElementById('plan-name').value.trim(),
+    examDate: new Date(document.getElementById('plan-date').value).toISOString(),
+    readyDaysBefore: Math.max(0, parseInt(document.getElementById('plan-ready').value) || 0),
+    defaultDailyHours: Math.max(0, parseFloat(document.getElementById('plan-daily').value) || 0),
+  };
+}
+
+function addPlan(e) {
+  e.preventDefault();
+  if (!document.getElementById('plan-name').value.trim() || !document.getElementById('plan-date').value) return;
+  const data = readPlanForm();
+  const id = Math.max(100, ...plans.map(p => p.id), 100) + 1;
+  plans.push({ id, ...data, startDate: new Date().toISOString(), availability: {}, tasks: [], exams: [] });
+  activePlanId = id;
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function openEditPlanModal(id) {
+  const p = getPlan(id);
+  if (!p) return;
+  openModal('Planning bewerken', `
+    <form onsubmit="editPlan(event,${id})">
+      ${planFormFields(p)}
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Opslaan</button>
+    </form>
+  `);
+}
+
+function editPlan(e, id) {
+  e.preventDefault();
+  const p = getPlan(id);
+  if (!p) return;
+  Object.assign(p, readPlanForm());
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function deletePlan(id) {
+  if (!confirm('Deze planning verwijderen?')) return;
+  plans = plans.filter(p => p.id !== id);
+  if (activePlanId === id) activePlanId = null;
+  savePlans();
+  renderPage('planner');
+}
+
+function updatePlanField(id, field, value) {
+  const p = getPlan(id);
+  if (!p) return;
+  p[field] = value;
+  savePlans();
+  renderPage('planner');
+}
+
+function setAvailability(id, key, value) {
+  const p = getPlan(id);
+  if (!p) return;
+  if (!p.availability) p.availability = {};
+  const v = parseFloat(value);
+  if (isNaN(v)) delete p.availability[key];
+  else p.availability[key] = Math.max(0, v);
+  savePlans();
+  renderPage('planner');
+}
+
+// --- Taken CRUD ---
+function openAddTaskModal(planId) {
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}">${s.name}</option>`).join('');
+  openModal('Taak toevoegen', `
+    <form onsubmit="addTask(event,${planId})">
+      <div class="form-group">
+        <label class="form-label">Vak</label>
+        <select class="form-select" id="task-subject" required>
+          <option value="">Kies een vak...</option>
+          ${subjectOptions}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Wat moet je doen?</label>
+        <input type="text" class="form-input" id="task-title" placeholder="Bijv. Samenvatting H5 maken" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Geschatte tijd (uren)</label>
+        <input type="number" class="form-input" id="task-hours" min="0.5" max="40" step="0.5" value="2" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Toevoegen</button>
+    </form>
+  `);
+}
+
+function addTask(e, planId) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const subject = document.getElementById('task-subject').value;
+  const title = document.getElementById('task-title').value.trim();
+  const hours = Math.max(0, parseFloat(document.getElementById('task-hours').value) || 0);
+  if (!subject || !title || !hours) return;
+  const id = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
+  p.tasks.push({ id, subject, title, hours, hoursDone: 0, done: false });
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function openLogHoursModal(planId, taskId) {
+  const p = getPlan(planId);
+  const t = p && p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  const done = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
+  openModal('Uren loggen', `
+    <p style="margin:0 0 4px;font-weight:600">${esc(t.title)}</p>
+    <p style="margin:0 0 14px;color:var(--gray-500);font-size:0.85rem">${fmtHours(done)} van ${fmtHours(t.hours)} gedaan</p>
+    <div class="log-quick-row">
+      <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},0.5)">+0,5 uur</button>
+      <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},1)">+1 uur</button>
+      <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},2)">+2 uur</button>
+    </div>
+    <form onsubmit="logTaskHoursExact(event,${planId},${taskId})" style="margin-top:14px">
+      <div class="form-group">
+        <label class="form-label">Of vul precies in hoeveel uur je erbij hebt gedaan</label>
+        <input type="number" class="form-input" id="log-hours-input" min="-${done}" max="${t.hours}" step="0.25" placeholder="Bijv. 1,5 (negatief om te corrigeren)">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Opslaan</button>
+    </form>
+  `);
+}
+
+function logTaskHours(planId, taskId, delta) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const t = p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  t.hoursDone = Math.min(t.hours, Math.max(0, (t.hoursDone || 0) + delta));
+  t.done = t.hoursDone >= t.hours;
+  if (delta > 0) updateStreak(); // studeren telt mee voor je streak
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function logTaskHoursExact(e, planId, taskId) {
+  e.preventDefault();
+  const v = parseFloat(document.getElementById('log-hours-input').value);
+  if (isNaN(v) || v === 0) { closeModal(); return; }
+  logTaskHours(planId, taskId, v);
+}
+
+function toggleTaskDone(planId, taskId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const t = p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  t.done = !(t.hoursDone >= t.hours);
+  t.hoursDone = t.done ? t.hours : 0;
+  if (t.done) updateStreak();
+  savePlans();
+  renderPage('planner');
+}
+
+function deleteTask(planId, taskId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  p.tasks = p.tasks.filter(t => t.id !== taskId);
+  savePlans();
+  renderPage('planner');
+}
+
+// --- Dashboard-kaart: wat moet je vandaag leren? ---
+function renderStudyTodayCard(plan, st) {
+  const today0 = startOfDay(today);
+  const day = st.sched.days.find(d => +d.date === +today0);
+  if (!day || day.assignments.length === 0) return '';
+  const useTimed = day.timed && day.timed.length;
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${icon('bookOpen')} Te leren vandaag</div>
+        <span class="card-action" onclick="navigate('planner')">${fmtHours(day.used)} &rarr;</span>
+      </div>
+      ${(useTimed ? day.timed : day.assignments).map(a => {
+        const s = subjects[a.subject];
+        return `
+          <div class="schedule-item">
+            ${useTimed ? `<span class="schedule-time">${a.start} - ${a.end}</span>` : ''}
+            <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
+            <div class="schedule-info">
+              <div class="schedule-subject">${esc(a.title)}</div>
+              <div class="schedule-detail">${s ? s.name : ''}${!useTimed ? ` · ${fmtHours(a.hours)}` : ''}</div>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+// --- Dashboard-kaart: loop ik op schema? ---
+function renderPlannerDashboardCard() {
+  loadPlans();
+  const plan = getDashboardPlan();
+
+  if (!plan) {
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">${icon('target')} Toetsweek &amp; examen</div>
+          <span class="card-action" onclick="navigate('planner')">Planner &rarr;</span>
+        </div>
+        <div class="empty-state empty-state-compact">
+          <p>Nog geen planning. Plan je toetsweek of examen vooruit.</p>
+          <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="navigate('planner')">${icon('plus', 14)} Planning maken</button>
+        </div>
+      </div>`;
+  }
+
+  const st = planStatus(plan);
+  const lbl = statusLabel(st);
+  return `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${icon('target')} Op schema?</div>
+        <span class="card-action" onclick="navigate('planner')">Planner &rarr;</span>
+      </div>
+      <div class="dash-plan ${lbl.cls}" onclick="navigate('planner')">
+        <div class="dash-plan-ring">${renderCircularProgress(st.pct, 76, 7)}</div>
+        <div class="dash-plan-info">
+          <div class="dash-plan-name">
+            <span class="plan-chip-type ${plan.type}">${plan.type === 'examen' ? 'Examen' : 'Toetsweek'}</span>
+            ${esc(plan.name)}
+          </div>
+          <div class="dash-plan-status ${lbl.cls}">${lbl.text}</div>
+          <div class="dash-plan-meta">
+            ${st.daysToDeadline >= 0 ? `Nog ${st.daysToDeadline} dag${st.daysToDeadline !== 1 ? 'en' : ''} tot deadline` : 'Deadline verstreken'}
+            · ${fmtHours(st.remaining)} te gaan
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }

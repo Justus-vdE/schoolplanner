@@ -33,6 +33,16 @@ function icon(name, size = 18) {
   return `<span style="display:inline-flex;width:${size}px;height:${size}px">${icons[name] || ''}</span>`;
 }
 
+// --- HTML escape (voor alle door de gebruiker ingevoerde tekst) ---
+function esc(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // --- Circular Progress Component ---
 function renderCircularProgress(percentage, size = 140, strokeWidth = 10) {
   const radius = (size - strokeWidth) / 2;
@@ -190,18 +200,46 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
 }
 
-// --- Notification Dropdown ---
-function renderNotifications() {
-  const notifs = [
-    { icon: '📝', bg: '#DBEAFE', text: 'Boekverslag moet vandaag ingeleverd worden', time: '1 uur geleden' },
-    { icon: '📊', bg: '#DCFCE7', text: 'Nieuw cijfer: Engels — 9.1', time: '3 uur geleden' },
-    { icon: '📅', bg: '#FEF3C7', text: 'Toets Wiskunde over 2 dagen', time: '5 uur geleden' },
-    { icon: '🏫', bg: '#FCE7F3', text: 'Sportdag morgen — geen boeken nodig', time: 'Gisteren' },
-  ];
+// --- Notification Dropdown (gegenereerd uit je echte data) ---
+function buildNotifications() {
+  const notifs = [];
+  const today0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
+  // Huiswerk dat vandaag of morgen moet
+  homework.filter(h => !h.done).forEach(h => {
+    const diff = Math.round((new Date(h.due).setHours(0,0,0,0) - today0) / 86400000);
+    if (diff === 0) notifs.push({ icon: '📝', bg: '#FEE2E2', text: `"${esc(h.title)}" moet vandaag af`, time: 'Vandaag' });
+    else if (diff === 1) notifs.push({ icon: '📝', bg: '#FEF3C7', text: `"${esc(h.title)}" moet morgen af`, time: 'Morgen' });
+  });
+
+  // Toetsen binnen 2 dagen
+  tests.forEach(t => {
+    const diff = Math.round((new Date(t.date).setHours(0,0,0,0) - today0) / 86400000);
+    const s = subjects[t.subject];
+    if (diff >= 0 && diff <= 2) {
+      notifs.push({ icon: '📅', bg: '#DBEAFE', text: `${s ? s.name : 'Toets'}: ${esc(t.title)} ${diff === 0 ? 'vandaag' : diff === 1 ? 'morgen' : 'over 2 dagen'}`, time: formatDateShort(new Date(t.date)) });
+    }
+  });
+
+  // Loop je achter op je toetsweek/examen-planning?
+  if (typeof getDashboardPlan === 'function') {
+    const plan = getDashboardPlan();
+    if (plan) {
+      const st = planStatus(plan);
+      if (st.totalNeeded > 0 && st.diff < -0.25 && st.pct < 100) {
+        notifs.push({ icon: '⏰', bg: '#FEE2E2', text: `Je loopt ${fmtHours(Math.abs(st.diff))} achter op "${esc(plan.name)}"`, time: 'Planner' });
+      }
+    }
+  }
+
+  return notifs.slice(0, 6);
+}
+
+function renderNotifications() {
+  const notifs = buildNotifications();
   return `
     <div class="notification-dropdown-header">Meldingen</div>
-    ${notifs.map(n => `
+    ${notifs.length === 0 ? '<div class="notification-empty">Geen meldingen — je bent helemaal bij! 🎉</div>' : notifs.map(n => `
       <div class="notification-item">
         <div class="notification-icon" style="background:${n.bg}">${n.icon}</div>
         <div>

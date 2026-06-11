@@ -6,6 +6,7 @@ let currentPage = 'dashboard';
 
 const routes = {
   dashboard:    { title: 'Dashboard',    render: renderDashboard,    icon: 'home' },
+  planner:      { title: 'Planner',      render: renderPlanner,      icon: 'target' },
   rooster:      { title: 'Rooster',      render: renderRooster,      icon: 'calendar' },
   huiswerk:     { title: 'Huiswerk',     render: renderHuiswerk,     icon: 'book' },
   toetsen:      { title: 'Toetsen',      render: renderToetsen,      icon: 'fileText' },
@@ -23,12 +24,16 @@ function navigate(page) {
   }
 }
 
+let lastRenderedPage = null;
+
 function renderPage(page) {
   currentPage = page;
   const route = routes[page];
   if (!route) return;
 
   const content = document.getElementById('app-content');
+  const keepScroll = lastRenderedPage === page;
+  const scrollY = window.scrollY;
   content.innerHTML = route.render();
 
   // Update navbar active states
@@ -41,8 +46,10 @@ function renderPage(page) {
     item.classList.toggle('active', item.dataset.page === page);
   });
 
-  // Scroll to top
-  window.scrollTo(0, 0);
+  // Behoud scrollpositie bij her-render van dezelfde pagina (bijv. afvinken)
+  if (keepScroll) window.scrollTo(0, scrollY);
+  else window.scrollTo(0, 0);
+  lastRenderedPage = page;
 }
 
 // --- Render Navbar ---
@@ -72,7 +79,7 @@ function renderNavbar() {
       </div>
       <div class="navbar-notification" onclick="toggleNotifications(event)">
         ${icons.bell}
-        <div class="badge"></div>
+        ${buildNotifications().length > 0 ? '<div class="badge"></div>' : ''}
         <div class="notification-dropdown" id="notification-dropdown">
           ${renderNotifications()}
         </div>
@@ -139,6 +146,8 @@ function initApp() {
   loadSchedule();
   loadTests();
   loadEvents();
+  loadPlans();
+  loadGrades();
 
   // Parse hash
   const hash = window.location.hash.slice(1);
