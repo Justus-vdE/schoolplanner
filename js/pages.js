@@ -1323,6 +1323,13 @@ function renderCijfers() {
             <button class="btn btn-outline btn-sm" onclick="openPasteGradesModal()">
               &#128203; Plak uit Magister
             </button>
+            <button class="btn btn-outline btn-sm" onclick="openTargetGradeModal()">
+              &#127919; Wat moet ik halen?
+            </button>
+            ${entries.length > 0 ? `
+            <button class="btn btn-outline btn-sm" onclick="openGradeDetailsModal()">
+              &#128202; Uitgebreid overzicht
+            </button>` : ''}
             ${entries.length > 0 ? `
             <button class="btn btn-outline btn-sm" style="color:#EF4444;border-color:#FCA5A5" onclick="deleteAllGrades()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -1449,6 +1456,135 @@ function addGrade(e) {
   saveGrades();
   closeModal();
   renderPage('cijfers');
+}
+
+// --- Wat moet ik halen? ---
+function openTargetGradeModal() {
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}">${s.name}</option>`).join('');
+  openModal('Wat moet ik halen?', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 14px">
+      Bereken welk cijfer je minimaal moet halen op je volgende toets om op je doelgemiddelde uit te komen.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Vak</label>
+      <select class="form-select" id="target-subject" required>
+        <option value="">Kies een vak...</option>
+        ${subjectOptions}
+      </select>
+    </div>
+    <div style="display:flex;gap:10px">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Doelgemiddelde</label>
+        <input type="number" class="form-input" id="target-avg" min="1" max="10" step="0.1" value="5.5">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Weging volgende toets</label>
+        <input type="number" class="form-input" id="target-weight" min="0.5" max="20" step="0.5" value="1">
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="calcTargetGrade()">Bereken</button>
+    <div id="target-result"></div>
+  `);
+}
+
+function calcTargetGrade() {
+  const subjectId = document.getElementById('target-subject').value;
+  const target = parseFloat(document.getElementById('target-avg').value);
+  const weight = parseFloat(document.getElementById('target-weight').value);
+  const box = document.getElementById('target-result');
+  if (!box) return;
+  if (!subjectId || isNaN(target) || isNaN(weight) || weight <= 0) {
+    box.innerHTML = '<p style="color:#B91C1C;font-size:0.85rem;margin-top:12px">Kies een vak en vul een geldig doel en weging in.</p>';
+    return;
+  }
+
+  const { sum, totalWeight } = gradeTotals(subjectId);
+  const current = totalWeight > 0 ? (sum / totalWeight) : null;
+  const req = requiredGradeFor(subjectId, target, weight);
+  const reqRounded = Math.ceil(req * 10) / 10;
+  const s = subjects[subjectId];
+
+  let verdict, cls;
+  if (req > 10) {
+    verdict = `Helaas: zelfs met een 10 kom je nog niet op een ${target.toString().replace('.', ',')} gemiddeld. Je zou een ${reqRounded.toFixed(1).replace('.', ',')} nodig hebben. Met meerdere toetsen kan het nog wel — blijven knokken!`;
+    cls = 'behind';
+  } else if (req <= 1) {
+    verdict = `Je staat al veilig! Zelfs met een 1,0 blijft je gemiddelde op of boven de ${target.toString().replace('.', ',')}.`;
+    cls = 'ahead';
+  } else {
+    verdict = `Je moet minimaal een <strong style="font-size:1.4rem">${reqRounded.toFixed(1).replace('.', ',')}</strong> halen (weging ${weight}).`;
+    cls = reqRounded >= 8 ? 'behind' : reqRounded >= 6.5 ? 'ontrack' : 'ahead';
+  }
+
+  box.innerHTML = `
+    <div class="plan-status-banner ${cls}" style="margin-top:14px;display:block">
+      <div style="font-size:0.8rem;color:var(--gray-500);margin-bottom:4px">
+        ${s.name} — huidig gemiddelde: <strong>${current != null ? current.toFixed(1).replace('.', ',') : 'nog geen cijfers'}</strong> (totaalgewicht ${totalWeight})
+      </div>
+      <div style="font-size:0.95rem">${verdict}</div>
+    </div>
+  `;
+}
+
+// --- Uitgebreid cijferoverzicht ---
+function openGradeDetailsModal() {
+  const entries = Object.entries(grades).filter(([id, d]) => subjects[id] && d.grades.length);
+  if (!entries.length) return;
+
+  let oSum = 0, oW = 0, allCount = 0, failCount = 0;
+  const rows = entries.map(([id, d]) => {
+    let sum = 0, tw = 0, fails = 0;
+    d.grades.forEach((g, i) => {
+      const w = (d.weights && d.weights[i]) || 1;
+      sum += g * w; tw += w;
+      if (g < 5.5) fails++;
+    });
+    oSum += sum; oW += tw; allCount += d.grades.length; failCount += fails;
+    const avg = tw > 0 ? sum / tw : 0;
+    const need55 = requiredGradeFor(id, 5.5, 1);
+    return {
+      id,
+      name: subjects[id].name,
+      color: subjects[id].color,
+      avg,
+      count: d.grades.length,
+      high: Math.max(...d.grades),
+      low: Math.min(...d.grades),
+      fails,
+      last: d.grades[d.grades.length - 1],
+      need55,
+    };
+  }).sort((a, b) => a.avg - b.avg); // laagste gemiddelde bovenaan: daar is werk
+
+  const f = (n) => n.toFixed(1).replace('.', ',');
+  const overall = oW > 0 ? oSum / oW : 0;
+
+  openModal('Uitgebreid cijferoverzicht', `
+    <div class="grades-detail-summary">
+      <div><strong>${f(overall)}</strong><span>gewogen gemiddeld</span></div>
+      <div><strong>${allCount}</strong><span>cijfers</span></div>
+      <div><strong>${failCount}</strong><span>onvoldoendes</span></div>
+      <div><strong>${rows.filter(r => r.avg < 5.5).length}</strong><span>vak${rows.filter(r => r.avg < 5.5).length !== 1 ? 'ken' : ''} onder 5,5</span></div>
+    </div>
+    <div class="grades-detail-table">
+      <div class="grades-detail-row head">
+        <span>Vak</span><span>Gem.</span><span>Aantal</span><span>Hoogste</span><span>Laagste</span><span>Onvold.</span><span>Nodig voor 5,5</span>
+      </div>
+      ${rows.map(r => `
+        <div class="grades-detail-row">
+          <span class="gd-name"><span class="schedule-dot" style="background:${r.color}"></span>${r.name}</span>
+          <span class="gd-avg ${r.avg >= 7 ? 'grade-good' : r.avg >= 5.5 ? 'grade-ok' : 'grade-bad'}">${f(r.avg)}</span>
+          <span>${r.count}</span>
+          <span>${f(r.high)}</span>
+          <span>${f(r.low)}</span>
+          <span class="${r.fails > 0 ? 'gd-fails' : ''}">${r.fails}</span>
+          <span>${r.need55 > 10 ? '<span class="gd-fails">>10</span>' : r.need55 <= 1 ? '<span style="color:#059669">veilig</span>' : f(Math.ceil(r.need55 * 10) / 10)}</span>
+        </div>
+      `).join('')}
+    </div>
+    <p class="form-hint" style="margin-top:10px">"Nodig voor 5,5" = het cijfer dat je op de volgende toets (weging 1) minimaal moet halen om gemiddeld op een 5,5 te staan of te komen. Vakken met het laagste gemiddelde staan bovenaan.</p>
+  `);
 }
 
 // --- Cijfers plakken uit Magister ---

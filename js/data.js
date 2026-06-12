@@ -271,6 +271,24 @@ function loadGrades() {
   });
 }
 
+// Som en totaalgewicht van één vak (voor berekeningen)
+function gradeTotals(subjectId) {
+  const d = grades[subjectId];
+  let sum = 0, totalWeight = 0;
+  if (d) d.grades.forEach((g, i) => {
+    const w = (d.weights && d.weights[i]) || 1;
+    sum += g * w;
+    totalWeight += w;
+  });
+  return { sum, totalWeight };
+}
+
+// Welk cijfer moet je halen (bij gegeven weging) om op een doelgemiddelde te komen?
+function requiredGradeFor(subjectId, target, weight) {
+  const { sum, totalWeight } = gradeTotals(subjectId);
+  return (target * (totalWeight + weight) - sum) / weight;
+}
+
 // Gewogen gemiddelde van één vak
 function getWeightedAverage(data) {
   let sum = 0, tw = 0;
