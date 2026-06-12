@@ -142,6 +142,14 @@ function initApp() {
 
   showApp();
 
+  // Eerste bezoek? Toon de welkomst-wizard (niveau + vakken kiezen).
+  // Bestaande gebruikers (met al opgeslagen gegevens) slaan we stilzwijgend over.
+  const hasData = localStorage.getItem('sp_settings') || localStorage.getItem('sp_plans') || localStorage.getItem('sp_homework') || localStorage.getItem('sp_grades');
+  if (!localStorage.getItem('sp_onboarded')) {
+    if (hasData) localStorage.setItem('sp_onboarded', 'true');
+    else showOnboarding();
+  }
+
   // Close notification dropdown on outside click
   document.addEventListener('click', () => {
     const dropdown = document.getElementById('notification-dropdown');

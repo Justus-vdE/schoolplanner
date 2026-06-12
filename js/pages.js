@@ -1992,6 +1992,17 @@ function renderInstellingen() {
               </div>
             </div>
           </div>
+          <div class="settings-section" style="margin-top:20px;border-top:1px solid var(--gray-100);padding-top:20px">
+            <div class="settings-toggle-label" style="margin-bottom:4px">&#128190; Back-up</div>
+            <div class="settings-toggle-desc" style="margin-bottom:12px">Je gegevens staan in deze browser. Download regelmatig een back-up — die kun je hier (of op een ander apparaat) terugzetten.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="exportBackup()">&#11015;&#65039; Download back-up</button>
+              <label class="btn btn-outline btn-sm" style="cursor:pointer">
+                &#11014;&#65039; Back-up terugzetten
+                <input type="file" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
+              </label>
+            </div>
+          </div>
           ${!isDemoCleared() ? `
           <div style="margin-top:16px">
             <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="confirmClearDemo()">
@@ -2012,6 +2023,153 @@ function updateSetting(key, value) {
   if (key === 'userName') {
     document.getElementById('navbar').innerHTML = renderNavbar();
   }
+}
+
+// --- Back-up: alle app-gegevens exporteren / terugzetten ---
+function exportBackup() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('sp_')) data[k] = localStorage.getItem(k);
+  }
+  const payload = { app: 'examen-planner', version: 1, exportedAt: new Date().toISOString(), data };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const d = new Date();
+  a.download = `examen-planner-backup-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importBackup(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const p = JSON.parse(reader.result);
+      if (!p || p.app !== 'examen-planner' || !p.data) throw new Error('dit is geen geldig Examen-Planner back-upbestand.');
+      const count = Object.keys(p.data).filter(k => k.startsWith('sp_')).length;
+      if (!count) throw new Error('het back-upbestand is leeg.');
+      const when = p.exportedAt ? new Date(p.exportedAt).toLocaleDateString('nl-NL') : 'onbekend';
+      if (!confirm(`Back-up van ${when} terugzetten? Je huidige gegevens in deze browser worden vervangen.`)) { input.value = ''; return; }
+      Object.keys(localStorage).filter(k => k.startsWith('sp_')).forEach(k => localStorage.removeItem(k));
+      Object.entries(p.data).forEach(([k, v]) => { if (k.startsWith('sp_')) localStorage.setItem(k, String(v)); });
+      alert('Back-up teruggezet! De app wordt opnieuw geladen.');
+      location.reload();
+    } catch (e) {
+      alert('Terugzetten mislukt: ' + e.message);
+      input.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// --- Onboarding: eerste-keer-wizard ---
+let wizardStep = 1;
+const wizardState = { level: 'havo', subjects: new Set(), name: '' };
+
+function showOnboarding() {
+  wizardStep = 1;
+  wizardState.level = 'havo';
+  wizardState.subjects = new Set();
+  wizardState.name = '';
+  let el = document.getElementById('onboarding');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'onboarding';
+    el.className = 'onboarding-overlay';
+    document.body.appendChild(el);
+  }
+  renderOnboarding();
+}
+
+function renderOnboarding() {
+  const el = document.getElementById('onboarding');
+  if (!el) return;
+
+  let body = '';
+  if (wizardStep === 1) {
+    body = `
+      <div class="onb-icon">&#127891;</div>
+      <h2>Welkom bij Examen-Planner!</h2>
+      <p>Plan je route naar je toetsweek of examen: vul je tijd en taken in, en zie elke dag of je op schema loopt.</p>
+      <div class="form-group" style="text-align:left;margin-top:18px">
+        <label class="form-label">Hoe heet je? (mag je overslaan)</label>
+        <input type="text" class="form-input" id="onb-name" value="${esc(wizardState.name)}" placeholder="Je voornaam" onchange="wizardState.name=this.value">
+      </div>
+      <button class="btn btn-primary onb-next" onclick="wizardState.name=document.getElementById('onb-name').value;wizardNext()">Aan de slag &rarr;</button>
+      <button class="onb-skip" onclick="finishOnboarding(false)">Overslaan en eerst rondkijken (met voorbeelddata)</button>
+    `;
+  } else if (wizardStep === 2) {
+    body = `
+      <div class="onb-icon">&#127919;</div>
+      <h2>Op welk niveau zit je?</h2>
+      <p>Dan laten we precies de vakken zien die bij jouw niveau horen.</p>
+      <div class="onb-levels">
+        ${Object.entries(examLevels).map(([k, v]) => `
+          <button class="onb-level ${wizardState.level === k ? 'active' : ''}" onclick="wizardSetLevel('${k}')">${v}</button>
+        `).join('')}
+      </div>
+      <button class="btn btn-primary onb-next" onclick="wizardNext()">Volgende &rarr;</button>
+      <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
+    `;
+  } else {
+    const keys = subjectsForLevel(wizardState.level).sort((a, b) => subjects[a].name.localeCompare(subjects[b].name, 'nl'));
+    body = `
+      <div class="onb-icon">&#128218;</div>
+      <h2>Welke vakken heb jij?</h2>
+      <p>Vink je vakkenpakket aan (${wizardState.subjects.size} gekozen) — aanpassen kan later altijd bij Instellingen.</p>
+      <div class="subject-picker onb-subjects">
+        ${keys.map(k => {
+          const s = subjects[k];
+          const on = wizardState.subjects.has(k);
+          return `<button type="button" class="subject-pick ${on ? 'on' : ''}" onclick="wizardToggleSubject('${k}')">
+            <span class="subject-pick-icon">${s.icon}</span>
+            <span class="subject-pick-name">${s.name}</span>
+            ${on ? `<span class="subject-pick-check">${icons.check}</span>` : ''}
+          </button>`;
+        }).join('')}
+      </div>
+      <button class="btn btn-primary onb-next" onclick="finishOnboarding(true)" ${wizardState.subjects.size === 0 ? 'disabled' : ''}>Klaar, start de app &#127881;</button>
+      <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
+    `;
+  }
+
+  el.innerHTML = `<div class="onb-card">${body}</div>`;
+}
+
+function wizardSetLevel(level) {
+  wizardState.level = level;
+  // Vakken die op het nieuwe niveau niet bestaan eruit halen
+  const valid = new Set(subjectsForLevel(level));
+  wizardState.subjects = new Set([...wizardState.subjects].filter(k => valid.has(k)));
+  renderOnboarding();
+}
+
+function wizardToggleSubject(key) {
+  if (wizardState.subjects.has(key)) wizardState.subjects.delete(key);
+  else wizardState.subjects.add(key);
+  renderOnboarding();
+}
+
+function wizardNext() { wizardStep++; renderOnboarding(); }
+function wizardBack() { wizardStep--; renderOnboarding(); }
+
+function finishOnboarding(applied) {
+  if (applied) {
+    if (wizardState.name.trim()) appSettings.userName = wizardState.name.trim();
+    appSettings.examLevel = wizardState.level;
+    appSettings.mySubjects = Array.from(wizardState.subjects);
+    saveSettings();
+    // Nieuwe gebruiker: schoon beginnen zonder voorbeelddata
+    clearDemoData();
+  }
+  localStorage.setItem('sp_onboarded', 'true');
+  const el = document.getElementById('onboarding');
+  if (el) el.remove();
+  showApp();
 }
 
 function confirmClearDemo() {
