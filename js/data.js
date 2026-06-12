@@ -603,6 +603,121 @@ function icalToAgendaItems(parsed) {
     }));
 }
 
+// --- Studie-game: XP, levels en badges ---
+// Studeersessies (focus-timer) leveren XP op; de geleerde tijd wordt
+// automatisch gelogd op je planner-taak en telt mee voor je streak.
+let gameStats = { xp: 0, sessions: 0, minutes: 0, tasksCompleted: 0, badges: [] };
+
+function loadGame() {
+  try { gameStats = { ...gameStats, ...JSON.parse(localStorage.getItem('sp_game') || '{}') }; } catch (e) {}
+  if (!Array.isArray(gameStats.badges)) gameStats.badges = [];
+}
+
+function saveGame() {
+  localStorage.setItem('sp_game', JSON.stringify(gameStats));
+}
+
+const gameLevels = [
+  { xp: 0,    name: 'Starter',       icon: '🌱' },
+  { xp: 60,   name: 'Studiekop',     icon: '📖' },
+  { xp: 150,  name: 'Doorzetter',    icon: '💪' },
+  { xp: 300,  name: 'Focusbeest',    icon: '🦁' },
+  { xp: 500,  name: 'Toetstemmer',   icon: '⚡' },
+  { xp: 800,  name: 'Examenpro',     icon: '🎯' },
+  { xp: 1200, name: 'Studielegende', icon: '👑' },
+  { xp: 1800, name: 'Examenkoning',  icon: '🏆' },
+];
+
+function gameLevel(xp) {
+  let i = 0;
+  for (let j = 0; j < gameLevels.length; j++) if (xp >= gameLevels[j].xp) i = j;
+  const cur = gameLevels[i];
+  const next = gameLevels[i + 1] || null;
+  return {
+    index: i,
+    name: cur.name,
+    icon: cur.icon,
+    next,
+    progress: next ? Math.min(100, Math.round(((xp - cur.xp) / (next.xp - cur.xp)) * 100)) : 100,
+  };
+}
+
+const gameBadges = [
+  { id: 'first',   icon: '🚀', name: 'Eerste sessie',  desc: 'Rond je eerste studeersessie af',        check: (s) => s.sessions >= 1 },
+  { id: 's10',     icon: '🔁', name: '10 sessies',     desc: 'Rond 10 studeersessies af',              check: (s) => s.sessions >= 10 },
+  { id: 's50',     icon: '🌀', name: '50 sessies',     desc: 'Rond 50 studeersessies af',              check: (s) => s.sessions >= 50 },
+  { id: 'h5',      icon: '⏰', name: '5 uur geleerd',  desc: 'Leer in totaal 5 uur met de timer',      check: (s) => s.minutes >= 300 },
+  { id: 'h25',     icon: '🧠', name: '25 uur geleerd', desc: 'Leer in totaal 25 uur met de timer',     check: (s) => s.minutes >= 1500 },
+  { id: 'task',    icon: '✅', name: 'Taak gekraakt',  desc: 'Maak een planner-taak helemaal af',      check: (s) => s.tasksCompleted >= 1 },
+  { id: 'streak7', icon: '🔥', name: 'Week-streak',    desc: '7 dagen op rij actief',                  check: () => loadStreak() >= 7 },
+  { id: 'level5',  icon: '⚡', name: 'Toetstemmer',    desc: 'Bereik level 5',                          check: (s) => gameLevel(s.xp).index >= 4 },
+];
+
+// --- Jouw studie-eiland: groeit met elke geleerde minuut ---
+// Elk item verschijnt zodra je genoeg XP (geleerde minuten) hebt.
+const islandItems = [
+  { xp: 10,   emoji: '🌱', name: 'Eerste plantje' },
+  { xp: 30,   emoji: '🌴', name: 'Palmboom' },
+  { xp: 60,   emoji: '🌺', name: 'Bloemen' },
+  { xp: 100,  emoji: '⛺', name: 'Tentje' },
+  { xp: 150,  emoji: '🔥', name: 'Kampvuur' },
+  { xp: 210,  emoji: '🦜', name: 'Papegaai' },
+  { xp: 280,  emoji: '🌳', name: 'Grote boom' },
+  { xp: 360,  emoji: '🛶', name: 'Kano' },
+  { xp: 450,  emoji: '🏠', name: 'Huisje' },
+  { xp: 550,  emoji: '🐢', name: 'Schildpad' },
+  { xp: 660,  emoji: '🌻', name: 'Zonnebloemen' },
+  { xp: 780,  emoji: '⛲', name: 'Fontein' },
+  { xp: 910,  emoji: '🐬', name: 'Dolfijn' },
+  { xp: 1050, emoji: '🗿', name: 'Standbeeld' },
+  { xp: 1200, emoji: '⛵', name: 'Zeilboot' },
+  { xp: 1400, emoji: '🌈', name: 'Regenboog' },
+  { xp: 1600, emoji: '🏰', name: 'Kasteel' },
+  { xp: 1850, emoji: '🚁', name: 'Helikopter' },
+  { xp: 2100, emoji: '🎆', name: 'Vuurwerk' },
+  { xp: 2400, emoji: '👑', name: 'Kroon van het eiland' },
+];
+
+// Vaste plekjes op het eiland (percentages), in volgorde van vrijspelen
+const islandSpots = [
+  { x: 48, y: 62 }, { x: 30, y: 48 }, { x: 64, y: 50 }, { x: 22, y: 64 },
+  { x: 56, y: 70 }, { x: 72, y: 62 }, { x: 38, y: 36 }, { x: 14, y: 52 },
+  { x: 50, y: 42 }, { x: 80, y: 50 }, { x: 28, y: 74 }, { x: 62, y: 34 },
+  { x: 88, y: 66 }, { x: 40, y: 56 }, { x: 8, y: 68 }, { x: 74, y: 28 },
+  { x: 18, y: 36 }, { x: 86, y: 36 }, { x: 68, y: 76 }, { x: 50, y: 24 },
+];
+
+function unlockedIslandItems(xp) {
+  return islandItems.filter(it => xp >= it.xp);
+}
+
+function nextIslandItem(xp) {
+  return islandItems.find(it => xp < it.xp) || null;
+}
+
+// Verwerkt een afgeronde (of gestopte) sessie: XP, badges, level-up.
+// 1 XP per geleerde minuut, +25% bonus als je de hele sessie afmaakt.
+function awardSession(minutes, completed) {
+  const base = Math.max(1, Math.round(minutes));
+  const bonus = completed ? Math.round(base * 0.25) : 0;
+  const levelBefore = gameLevel(gameStats.xp).index;
+  const itemsBefore = unlockedIslandItems(gameStats.xp).length;
+  gameStats.xp += base + bonus;
+  gameStats.sessions += 1;
+  gameStats.minutes += base;
+  const newBadges = gameBadges.filter(b => !gameStats.badges.includes(b.id) && b.check(gameStats));
+  newBadges.forEach(b => gameStats.badges.push(b.id));
+  saveGame();
+  return {
+    xp: base + bonus,
+    bonus,
+    newBadges,
+    newItems: unlockedIslandItems(gameStats.xp).slice(itemsBefore),
+    leveledUp: gameLevel(gameStats.xp).index > levelBefore,
+    level: gameLevel(gameStats.xp),
+  };
+}
+
 // --- Voorbeelddata wissen ---
 function clearDemoData() {
   homework = homework.filter(h => h.id > 100);

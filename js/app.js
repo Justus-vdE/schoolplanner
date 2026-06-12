@@ -140,6 +140,7 @@ function initApp() {
   loadPlans();
   loadGrades();
   loadIcalFeeds();
+  loadGame();
 
   // Parse hash
   const hash = window.location.hash.slice(1);
