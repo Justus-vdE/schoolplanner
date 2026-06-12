@@ -1995,6 +1995,9 @@ function renderTaskRow(plan, t) {
         </div>
         <div class="plan-task-actions">
           ${!isDone ? `<button class="btn btn-outline btn-sm plan-log-btn" onclick="openLogHoursModal(${plan.id},${t.id})">${icon('clock', 13)} Uren loggen</button>` : ''}
+          <button class="lesson-action-btn" onclick="openEditTaskModal(${plan.id},${t.id})" title="Bewerken">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
           <button class="lesson-action-btn ${isDone ? 'done-btn' : ''}" onclick="toggleTaskDone(${plan.id},${t.id})" title="${isDone ? 'Niet klaar' : 'Klaar'}">${icons.check}</button>
           <button class="lesson-action-btn delete" onclick="deleteTask(${plan.id},${t.id})" title="Verwijderen">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
@@ -2506,6 +2509,52 @@ function addTask(e, planId) {
   if (!subject || !title || !hours) return;
   const id = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
   p.tasks.push({ id, subject, title, hours, hoursDone: 0, done: false });
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function openEditTaskModal(planId, taskId) {
+  const p = getPlan(planId);
+  const t = p && p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}" ${key === t.subject ? 'selected' : ''}>${s.name}</option>`).join('');
+  openModal('Taak bewerken', `
+    <form onsubmit="editTask(event,${planId},${taskId})">
+      <div class="form-group">
+        <label class="form-label">Vak</label>
+        <select class="form-select" id="edit-task-subject" required>${subjectOptions}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Wat moet je doen?</label>
+        <input type="text" class="form-input" id="edit-task-title" value="${esc(t.title)}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Geschatte tijd (uren)</label>
+        <input type="number" class="form-input" id="edit-task-hours" min="0.5" max="40" step="0.5" value="${t.hours}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Al gedaan (uren)</label>
+        <input type="number" class="form-input" id="edit-task-done" min="0" max="40" step="0.25" value="${Math.max(0, t.hoursDone || 0)}">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Opslaan</button>
+    </form>
+  `);
+}
+
+function editTask(e, planId, taskId) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  const t = p && p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  const hours = parseFloat(document.getElementById('edit-task-hours').value);
+  const done = parseFloat(document.getElementById('edit-task-done').value);
+  t.subject = document.getElementById('edit-task-subject').value;
+  t.title = document.getElementById('edit-task-title').value.trim() || t.title;
+  t.hours = isNaN(hours) ? t.hours : Math.min(40, Math.max(0.5, hours));
+  t.hoursDone = isNaN(done) ? (t.hoursDone || 0) : Math.min(t.hours, Math.max(0, done));
+  t.done = t.hoursDone >= t.hours;
   savePlans();
   closeModal();
   renderPage('planner');
