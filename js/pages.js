@@ -1818,9 +1818,14 @@ function renderInstellingen() {
 
   return `
     <div class="page-content">
-      <div class="page-header">
-        <h1>Instellingen</h1>
-        <p>Pas je Examen-Planner aan naar jouw wensen</p>
+      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <h1>Instellingen</h1>
+          <p>Pas je Examen-Planner aan naar jouw wensen</p>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="showOnboarding('tour')">
+          &#128640; Rondleiding starten
+        </button>
       </div>
 
       <div class="settings-grid">
@@ -2066,15 +2071,25 @@ function importBackup(input) {
   reader.readAsText(file);
 }
 
-// --- Onboarding: eerste-keer-wizard ---
+// --- Onboarding: eerste-keer-wizard & rondleiding ---
 let wizardStep = 1;
+let wizardMode = 'fresh'; // 'fresh' = nieuwe gebruiker, 'tour' = rondleiding vanuit Instellingen
+const WIZARD_TOTAL = 10;
 const wizardState = { level: 'havo', subjects: new Set(), name: '' };
 
-function showOnboarding() {
+function showOnboarding(mode) {
+  wizardMode = mode || 'fresh';
   wizardStep = 1;
-  wizardState.level = 'havo';
-  wizardState.subjects = new Set();
-  wizardState.name = '';
+  if (wizardMode === 'tour') {
+    // Vooraf invullen met je huidige instellingen
+    wizardState.level = appSettings.examLevel || 'havo';
+    wizardState.subjects = new Set(mySubjectKeys());
+    wizardState.name = appSettings.userName || '';
+  } else {
+    wizardState.level = 'havo';
+    wizardState.subjects = new Set();
+    wizardState.name = '';
+  }
   let el = document.getElementById('onboarding');
   if (!el) {
     el = document.createElement('div');
@@ -2085,22 +2100,39 @@ function showOnboarding() {
   renderOnboarding();
 }
 
+// Hulpje voor de uitleg-stappen van de rondleiding
+function wizardInfoStep(iconChar, title, intro, items) {
+  return `
+    <div class="onb-icon">${iconChar}</div>
+    <h2>${title}</h2>
+    <p>${intro}</p>
+    <ul class="onb-list">
+      ${items.map(i => `<li>${i}</li>`).join('')}
+    </ul>
+    <button class="btn btn-primary onb-next" onclick="wizardNext()">Volgende &rarr;</button>
+    <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
+  `;
+}
+
 function renderOnboarding() {
   const el = document.getElementById('onboarding');
   if (!el) return;
+  const isTour = wizardMode === 'tour';
 
   let body = '';
   if (wizardStep === 1) {
     body = `
       <div class="onb-icon">&#127891;</div>
-      <h2>Welkom bij Examen-Planner!</h2>
-      <p>Plan je route naar je toetsweek of examen: vul je tijd en taken in, en zie elke dag of je op schema loopt.</p>
+      <h2>${isTour ? 'Rondleiding door Examen-Planner' : 'Welkom bij Examen-Planner!'}</h2>
+      <p>${isTour
+        ? 'We lopen langs je instellingen en daarna langs elke pagina: wat je er doet en waar je alles vindt.'
+        : 'Plan je route naar je toetsweek of examen: vul je tijd en taken in, en zie elke dag of je op schema loopt. Eerst even instellen, daarna een korte rondleiding.'}</p>
       <div class="form-group" style="text-align:left;margin-top:18px">
         <label class="form-label">Hoe heet je? (mag je overslaan)</label>
         <input type="text" class="form-input" id="onb-name" value="${esc(wizardState.name)}" placeholder="Je voornaam" onchange="wizardState.name=this.value">
       </div>
-      <button class="btn btn-primary onb-next" onclick="wizardState.name=document.getElementById('onb-name').value;wizardNext()">Aan de slag &rarr;</button>
-      <button class="onb-skip" onclick="finishOnboarding(false)">Overslaan en eerst rondkijken (met voorbeelddata)</button>
+      <button class="btn btn-primary onb-next" onclick="wizardState.name=document.getElementById('onb-name').value;wizardNext()">${isTour ? 'Start de rondleiding' : 'Aan de slag'} &rarr;</button>
+      <button class="onb-skip" onclick="finishOnboarding(false)">${isTour ? 'Rondleiding sluiten' : 'Overslaan en eerst rondkijken (met voorbeelddata)'}</button>
     `;
   } else if (wizardStep === 2) {
     body = `
@@ -2115,7 +2147,7 @@ function renderOnboarding() {
       <button class="btn btn-primary onb-next" onclick="wizardNext()">Volgende &rarr;</button>
       <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
     `;
-  } else {
+  } else if (wizardStep === 3) {
     const keys = subjectsForLevel(wizardState.level).sort((a, b) => subjects[a].name.localeCompare(subjects[b].name, 'nl'));
     body = `
       <div class="onb-icon">&#128218;</div>
@@ -2132,12 +2164,76 @@ function renderOnboarding() {
           </button>`;
         }).join('')}
       </div>
-      <button class="btn btn-primary onb-next" onclick="finishOnboarding(true)" ${wizardState.subjects.size === 0 ? 'disabled' : ''}>Klaar, start de app &#127881;</button>
+      <button class="btn btn-primary onb-next" onclick="wizardNext()" ${wizardState.subjects.size === 0 ? 'disabled' : ''}>Volgende &rarr;</button>
+      <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
+    `;
+  } else if (wizardStep === 4) {
+    body = wizardInfoStep('&#127968;', 'Het Dashboard', 'Je startpagina — in één blik zie je hoe je ervoor staat.', [
+      '<strong>Bovenbalk:</strong> je taken, huiswerk, toetsen deze week en of je <strong>op schema</strong> loopt voor je toetsweek/examen',
+      '<strong>Te leren vandaag:</strong> wat je vandaag moet doen volgens je studieschema',
+      '<strong>Streak</strong> &#128293;: elke dag iets afvinken of uren loggen houdt je reeks in leven',
+      '<strong>Op schema?-kaart:</strong> klik erop om direct naar je planning te gaan',
+    ]);
+  } else if (wizardStep === 5) {
+    body = wizardInfoStep('&#127919;', 'De Planner (het hart van de app)', 'Hier plan je je route naar een toetsweek of examen. Te vinden als 2e knop in het menu.', [
+      '<strong>Nieuwe planning:</strong> kies Toetsweek of Examen, de datum en hoeveel dagen van tevoren je klaar wilt zijn',
+      '<strong>Toetsrooster:</strong> voeg je toetsen toe of klik <em>Importeer uit Toetsen</em>',
+      '<strong>Beschikbare tijd:</strong> uren per dag, of via <em>&#128336; tijd</em> precies wanneer (bv. 15:00–17:00)',
+      '<strong>Taken:</strong> wat je moet doen + hoelang; met <em>&#128203; Lijst plakken</em> maak je van elke regel een taak',
+      '<strong>Uren loggen</strong> na het leren — zo zie je of je <strong>vóór of achter</strong> loopt (in uren)',
+    ]);
+  } else if (wizardStep === 6) {
+    body = wizardInfoStep('&#128197;', 'Het Rooster', 'Je weekrooster, maandag t/m vrijdag.', [
+      '<strong>Les toevoegen</strong> met vak, uur en lokaal — de lestijden stel je in bij Instellingen',
+      '<strong>Koppel Magister:</strong> plak je agenda-link uit Magister (Agenda &rarr; instellingen &rarr; Agenda koppelen) en je rooster wordt automatisch gevuld — <strong>zonder wachtwoord</strong>',
+      'Daarna is <em>Rooster vernieuwen</em> één klik',
+    ]);
+  } else if (wizardStep === 7) {
+    body = wizardInfoStep('&#128214;', 'Huiswerk & Toetsen', 'Je dagelijkse werk naast de grote planning.', [
+      '<strong>Huiswerk:</strong> opdrachten met deadline, filter op vandaag/deze week, afvinken voedt je streak',
+      '<strong>&#128203; Lijst plakken:</strong> plak al je opgaves in één keer — elke regel wordt een losse opdracht',
+      '<strong>Toetsen:</strong> alle aankomende toetsen, SO\'s en mondelingen met "nog X dagen" — ook losse toetsen tussen toetsweken door',
+      'Toetsen van deze week verschijnen automatisch op je dashboard en in je meldingen &#128276;',
+    ]);
+  } else if (wizardStep === 8) {
+    body = wizardInfoStep('&#128202;', 'Cijfers', 'Al je cijfers, met weging — net als op school.', [
+      '<strong>Cijfer toevoegen</strong> met omschrijving en weging; gemiddelden zijn gewogen',
+      '<strong>&#128203; Plak uit Magister:</strong> kopieer je cijferlijst en alles wordt herkend (vak, cijfer, weging)',
+      '<strong>&#127919; Wat moet ik halen?:</strong> bereken wat je minimaal moet scoren voor je doelgemiddelde',
+      '<strong>&#128202; Uitgebreid overzicht:</strong> per vak hoogste, laagste, onvoldoendes en wat je nodig hebt voor een 5,5',
+    ]);
+  } else if (wizardStep === 9) {
+    body = wizardInfoStep('&#128198;', 'De Agenda', 'Maandoverzicht met al je events én je eigen kalenders.', [
+      '<strong>Events toevoegen:</strong> excursies, deadlines, afspraken — met type en tijd',
+      '<strong>Kalender koppelen:</strong> plak de iCal-link van Google Calendar, Apple/iCloud of Outlook (uitleg per app zit ingebouwd)',
+      'Gekoppelde afspraken zijn alleen-lezen en krijgen een paars label met de bron',
+      'Alles verschijnt ook in de mini-kalender op je dashboard',
+    ]);
+  } else {
+    body = `
+      <div class="onb-icon">&#9881;&#65039;</div>
+      <h2>Instellingen &amp; klaar!</h2>
+      <p>Rechtsboven bij het tandwiel vind je alles om de app van jou te maken:</p>
+      <ul class="onb-list">
+        <li><strong>Profiel, lesuren &amp; pauzes</strong> — bepalen de tijden in je rooster</li>
+        <li><strong>Vakken &amp; niveau</strong> aanpassen en <strong>docenten</strong> per vak invullen</li>
+        <li><strong>&#128190; Back-up:</strong> download regelmatig een back-up — je gegevens staan in deze browser, en met het bestand zet je alles terug (ook op een ander apparaat)</li>
+        <li><strong>Wis voorbeelddata</strong> als je schoon wilt beginnen</li>
+        <li>Deze <strong>rondleiding</strong> kun je daar altijd opnieuw starten</li>
+      </ul>
+      <button class="btn btn-primary onb-next" onclick="finishOnboarding(true)">Klaar ${isTour ? '' : ', start de app '}&#127881;</button>
       <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
     `;
   }
 
-  el.innerHTML = `<div class="onb-card">${body}</div>`;
+  el.innerHTML = `
+    <div class="onb-card">
+      ${body}
+      <div class="onb-dots">
+        ${Array.from({ length: WIZARD_TOTAL }, (_, i) => `<span class="onb-dot ${i + 1 === wizardStep ? 'active' : i + 1 < wizardStep ? 'done' : ''}"></span>`).join('')}
+      </div>
+    </div>
+  `;
 }
 
 function wizardSetLevel(level) {
@@ -2163,8 +2259,9 @@ function finishOnboarding(applied) {
     appSettings.examLevel = wizardState.level;
     appSettings.mySubjects = Array.from(wizardState.subjects);
     saveSettings();
-    // Nieuwe gebruiker: schoon beginnen zonder voorbeelddata
-    clearDemoData();
+    // Alleen bij een echt nieuwe gebruiker: schoon beginnen zonder
+    // voorbeelddata. Bij de rondleiding blijven alle gegevens staan.
+    if (wizardMode === 'fresh') clearDemoData();
   }
   localStorage.setItem('sp_onboarded', 'true');
   const el = document.getElementById('onboarding');

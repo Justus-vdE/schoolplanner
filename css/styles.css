@@ -2991,3 +2991,43 @@ a { color: inherit; text-decoration: none; }
 .onb-level:hover { border-color: var(--gray-300); }
 .onb-level.active { border-color: var(--accent); background: var(--accent-light); color: var(--accent-hover); }
 .onb-subjects { margin-top: 18px; max-height: 300px; overflow-y: auto; text-align: left; }
+
+/* --- Onboarding: uitleg-lijst & voortgangsbolletjes --- */
+.onb-list {
+  text-align: left;
+  margin: 16px 0 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.onb-list li {
+  font-size: 0.86rem;
+  color: var(--gray-600);
+  line-height: 1.5;
+  padding-left: 22px;
+  position: relative;
+}
+.onb-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+.onb-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 20px;
+}
+.onb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--gray-200);
+  transition: var(--transition);
+}
+.onb-dot.active { background: var(--accent); transform: scale(1.35); }
+.onb-dot.done { background: var(--accent-light); }
