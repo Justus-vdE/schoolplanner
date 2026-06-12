@@ -411,6 +411,88 @@ function parsePastedItems(text) {
   return rows;
 }
 
+// --- Magister-rooster via agenda-koppeling (iCal) ---
+function getMagisterIcsUrl() {
+  return localStorage.getItem('sp_magister_ics') || '';
+}
+function saveMagisterIcsUrl(url) {
+  if (url) localStorage.setItem('sp_magister_ics', url);
+  else localStorage.removeItem('sp_magister_ics');
+}
+
+// Eenvoudige iCal-parser: haalt VEVENTs met start, eind, titel en lokaal eruit.
+function parseIcs(text) {
+  // Regels die over meerdere regels doorlopen weer aan elkaar plakken
+  const unfolded = String(text || '').replace(/\r?\n[ \t]/g, '');
+  const events = [];
+  let cur = null;
+  for (const line of unfolded.split(/\r?\n/)) {
+    if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (line === 'END:VEVENT') {
+      if (cur && cur.start && cur.end) events.push(cur);
+      cur = null; continue;
+    }
+    if (!cur) continue;
+    const idx = line.indexOf(':');
+    if (idx < 0) continue;
+    const keyPart = line.slice(0, idx);      // bv. DTSTART;TZID=Europe/Amsterdam
+    const value = line.slice(idx + 1);
+    const key = keyPart.split(';')[0].toUpperCase();
+    if (key === 'DTSTART') cur.start = parseIcsDate(value);
+    else if (key === 'DTEND') cur.end = parseIcsDate(value);
+    else if (key === 'SUMMARY') cur.summary = value.replace(/\\,/g, ',').replace(/\\n/g, ' ').trim();
+    else if (key === 'LOCATION') cur.location = value.replace(/\\,/g, ',').trim();
+  }
+  return events;
+}
+
+function parseIcsDate(v) {
+  const m = String(v).match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s, z] = m;
+  if (z === 'Z') return new Date(Date.UTC(+y, mo - 1, +d, +h, +mi, +s));
+  return new Date(+y, mo - 1, +d, +h, +mi, +s);
+}
+
+// Bouwt een week-rooster (maandag t/m vrijdag) uit agenda-items: voor elke
+// weekdag pakken we de eerstvolgende datum vanaf vandaag en zetten de lessen
+// van die dag om naar roosterregels.
+function icsToWeekSchedule(events) {
+  const result = { maandag: [], dinsdag: [], woensdag: [], donderdag: [], vrijdag: [] };
+  const today0 = startOfDay(today);
+  const pad = (n) => String(n).padStart(2, '0');
+
+  dayNames.forEach((dayKey, i) => {
+    const jsDay = i + 1; // ma=1 ... vr=5
+    let target = null;
+    for (let off = 0; off < 14; off++) {
+      const d = addDays(today0, off);
+      if (d.getDay() === jsDay) { target = d; break; }
+    }
+    if (!target) return;
+
+    const dayEvents = events
+      .filter(ev => ev.start && startOfDay(ev.start).getTime() === target.getTime())
+      .sort((a, b) => a.start - b.start);
+
+    result[dayKey] = dayEvents.map((ev, idx) => {
+      const summary = ev.summary || 'Les';
+      // Vak herkennen uit de titel (bv. "ne - 104 - JAN" of "Wiskunde A")
+      const tokens = summary.split(/[\s\-–]+/).filter(Boolean);
+      let subject = null;
+      if (tokens.length >= 2) subject = detectSubjectKey(tokens[0] + ' ' + tokens[1]);
+      if (!subject && tokens.length >= 1) subject = detectSubjectKey(tokens[0]);
+      return {
+        hour: idx + 1,
+        time: `${pad(ev.start.getHours())}:${pad(ev.start.getMinutes())} - ${pad(ev.end.getHours())}:${pad(ev.end.getMinutes())}`,
+        subject: subject || summary.slice(0, 30),
+        room: ev.location || '',
+      };
+    });
+  });
+  return result;
+}
+
 // --- Voorbeelddata wissen ---
 function clearDemoData() {
   homework = homework.filter(h => h.id > 100);

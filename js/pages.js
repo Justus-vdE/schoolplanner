@@ -269,9 +269,9 @@ function renderRooster() {
           <button class="btn btn-primary btn-sm" onclick="openAddLessonModal()">
             ${icon('plus', 14)} Les toevoegen
           </button>
-          <button class="btn ${magistarConnected ? 'btn-magister-connected' : 'btn-magister'} btn-sm" onclick="openMagisterModal('rooster')">
+          <button class="btn ${getMagisterIcsUrl() ? 'btn-magister-connected' : 'btn-magister'} btn-sm" onclick="openMagisterIcsModal()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            ${magistarConnected ? 'Magister gekoppeld' : 'Koppel Magister'}
+            ${getMagisterIcsUrl() ? 'Magister gekoppeld' : 'Koppel Magister'}
           </button>
         </div>
       </div>
@@ -430,6 +430,81 @@ function deleteLesson(day, index) {
   schedule[day].splice(index, 1);
   saveSchedule();
   renderPage('rooster');
+}
+
+// --- Magister-rooster koppelen via agenda-link (iCal) ---
+function openMagisterIcsModal() {
+  const saved = getMagisterIcsUrl();
+  openModal('Magister-rooster koppelen', `
+    ${saved ? `
+      <div class="connect-status connected" style="margin-bottom:12px">
+        <span class="connect-status-dot active"></span> Gekoppeld via agenda-link
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="importMagisterIcs(true)" id="ics-import-btn">
+          &#128260; Rooster vernieuwen
+        </button>
+        <button class="btn btn-outline" onclick="saveMagisterIcsUrl('');closeModal();renderPage('rooster')">Ontkoppelen</button>
+      </div>
+      <div class="login-divider"><span>of nieuwe link plakken</span></div>
+    ` : `
+      <p class="connect-desc" style="text-align:left">Zo vind je jouw persoonlijke agenda-link in Magister:</p>
+      <ol style="margin:0 0 14px;padding-left:20px;color:var(--gray-600);font-size:0.88rem;line-height:1.7">
+        <li>Open <strong>Magister</strong> (web of app) en ga naar <strong>Agenda</strong></li>
+        <li>Klik op het <strong>tandwiel / instellingen</strong> (of de drie puntjes)</li>
+        <li>Kies <strong>"Agenda koppelen"</strong> en zet de koppeling <strong>aan</strong></li>
+        <li><strong>Kopieer de link</strong> (begint met https:// of webcal://)</li>
+      </ol>
+    `}
+    <div class="form-group">
+      <label class="form-label">Plak hier je agenda-link</label>
+      <input type="text" class="form-input" id="ics-url-input" placeholder="https://...magister.net/...">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="importMagisterIcs(false)" id="ics-link-btn">
+      Koppel &amp; importeer rooster
+    </button>
+    <p class="form-hint" style="margin-top:10px">Je rooster voor de komende week wordt overgenomen (ma t/m vr). Vernieuwen kan daarna met &eacute;&eacute;n klik. Je wachtwoord is niet nodig.</p>
+  `);
+}
+
+async function importMagisterIcs(useStored) {
+  let url = useStored ? getMagisterIcsUrl() : (document.getElementById('ics-url-input').value || '').trim();
+  if (!url && useStored === false) { alert('Plak eerst je agenda-link uit Magister.'); return; }
+  if (!url) return;
+  url = url.replace(/^webcal:\/\//i, 'https://');
+  if (!/^https:\/\//i.test(url)) { alert('Dat lijkt geen geldige link. Hij moet beginnen met https:// of webcal://'); return; }
+
+  const btn = document.getElementById(useStored ? 'ics-import-btn' : 'ics-link-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Bezig met ophalen...'; }
+
+  try {
+    const resp = await fetch('/api/ics?url=' + encodeURIComponent(url));
+    if (!resp.ok) throw new Error(await resp.text() || ('Fout ' + resp.status));
+    const text = await resp.text();
+    const events = parseIcs(text);
+    if (!events.length) throw new Error('Geen agenda-items gevonden. Controleer of de koppeling in Magister aan staat.');
+
+    const newSchedule = icsToWeekSchedule(events);
+    const lessonCount = Object.values(newSchedule).reduce((s, d) => s + d.length, 0);
+    if (!lessonCount) throw new Error('Geen lessen gevonden voor de komende week (vakantie?). Probeer het later opnieuw.');
+
+    if (!confirm(`${lessonCount} lessen gevonden voor de komende week. Je huidige rooster wordt vervangen. Doorgaan?`)) {
+      if (btn) { btn.disabled = false; btn.textContent = useStored ? '🔄 Rooster vernieuwen' : 'Koppel & importeer rooster'; }
+      return;
+    }
+
+    schedule = newSchedule;
+    saveSchedule();
+    saveMagisterIcsUrl(url);
+    closeModal();
+    renderPage('rooster');
+  } catch (err) {
+    const offline = location.protocol === 'file:';
+    alert('Importeren mislukt: ' + (offline
+      ? 'deze koppeling werkt alleen op de online versie (examen-planner.nl).'
+      : (err.message || 'onbekende fout')));
+    if (btn) { btn.disabled = false; btn.textContent = useStored ? '🔄 Rooster vernieuwen' : 'Koppel & importeer rooster'; }
+  }
 }
 
 // --- Magister Modal ---
