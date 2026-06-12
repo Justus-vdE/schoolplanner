@@ -522,9 +522,14 @@ function renderHuiswerk() {
           <h1>Huiswerk</h1>
           <p>${homework.filter(h => !h.done).length} taken open</p>
         </div>
-        <button class="btn btn-primary" onclick="openAddHomeworkModal()">
-          ${icon('plus', 16)} Toevoegen
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="openAddHomeworkModal()">
+            ${icon('plus', 16)} Toevoegen
+          </button>
+          <button class="btn btn-outline" onclick="openPasteHomeworkModal()">
+            &#128203; Lijst plakken
+          </button>
+        </div>
       </div>
 
       <div class="hw-filters">
@@ -595,6 +600,59 @@ function openAddHomeworkModal() {
       </button>
     </form>
   `);
+}
+
+function openPasteHomeworkModal() {
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}">${s.name}</option>`).join('');
+  const todayStr = dateKey(today);
+  openModal('Lijst met opgaves plakken', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">
+      Plak hieronder je opgaves — <strong>elke regel wordt een losse huiswerkopdracht</strong>.
+      Begint een regel met een vak(afkorting), dan wordt dat vak gebruikt; anders het standaardvak hieronder.
+    </p>
+    <textarea class="form-input" id="paste-hw-input" rows="7" placeholder="Bijv.:&#10;wi H5 opgaven 1 t/m 15&#10;ne boekverslag afmaken&#10;Samenvatting paragraaf 3.2" style="resize:vertical;font-size:0.85rem"></textarea>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <div class="form-group" style="flex:1;margin:0">
+        <label class="form-label">Standaardvak</label>
+        <select class="form-select" id="paste-hw-subject" required>
+          <option value="">Kies een vak...</option>
+          ${subjectOptions}
+        </select>
+      </div>
+      <div class="form-group" style="flex:1;margin:0">
+        <label class="form-label">Deadline (voor alle regels)</label>
+        <input type="date" class="form-input" id="paste-hw-due" value="${todayStr}" required>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px" onclick="importPastedHomework()">
+      ${icon('plus', 16)} Opgaves toevoegen
+    </button>
+  `);
+}
+
+function importPastedHomework() {
+  const text = document.getElementById('paste-hw-input').value;
+  const defaultSubject = document.getElementById('paste-hw-subject').value;
+  const due = document.getElementById('paste-hw-due').value;
+  const rows = parsePastedItems(text);
+  if (!rows.length) { alert('Geen opgaves gevonden — plak minstens één regel tekst.'); return; }
+  if (!due) { alert('Kies een deadline.'); return; }
+  if (!defaultSubject && rows.some(r => !r.subject)) { alert('Kies een standaardvak (niet elke regel heeft een herkenbaar vak).'); return; }
+
+  let nextId = Math.max(100, ...homework.map(h => h.id)) + 1;
+  rows.forEach(r => {
+    homework.push({
+      id: nextId++,
+      subject: r.subject || defaultSubject,
+      title: r.title,
+      due: new Date(due),
+      done: false,
+    });
+  });
+  saveHomework();
+  closeModal();
+  renderPage('huiswerk');
 }
 
 function addHomework(e) {
@@ -1884,7 +1942,10 @@ function renderPlanDetail(plan) {
       <div class="card">
         <div class="card-header">
           <div class="card-title">${icon('listChecks')} Wat moet je doen</div>
-          <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${plan.id})">${icon('plus', 14)} Taak</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="openPasteTasksModal(${plan.id})">&#128203; Lijst plakken</button>
+            <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${plan.id})">${icon('plus', 14)} Taak</button>
+          </div>
         </div>
         ${plan.tasks.length === 0
           ? '<div class="empty-state empty-state-compact"><p>Nog geen taken. Voeg toe wat je moet doen en hoelang het duurt.</p></div>'
@@ -2378,6 +2439,61 @@ function openAddTaskModal(planId) {
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Toevoegen</button>
     </form>
   `);
+}
+
+function openPasteTasksModal(planId) {
+  const subjectOptions = mySubjectEntries().map(([key, s]) =>
+    `<option value="${key}">${s.name}</option>`).join('');
+  openModal('Lijst met taken plakken', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">
+      Plak je leerwerk — <strong>elke regel wordt een losse taak</strong> in je planning.
+      Tips: begin een regel met een vak(afkorting) en zet er een duur achter, bijv.
+      <em>"wi samenvatting H5 2u"</em>. Zonder duur geldt het standaardaantal uren hieronder.
+    </p>
+    <textarea class="form-input" id="paste-task-input" rows="7" placeholder="Bijv.:&#10;wi samenvatting H5 maken 2u&#10;wi oefentoets H5 1,5u&#10;en woordjes unit 7 leren 1u&#10;gs aantekeningen doorlezen" style="resize:vertical;font-size:0.85rem"></textarea>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <div class="form-group" style="flex:1;margin:0">
+        <label class="form-label">Standaardvak</label>
+        <select class="form-select" id="paste-task-subject" required>
+          <option value="">Kies een vak...</option>
+          ${subjectOptions}
+        </select>
+      </div>
+      <div class="form-group" style="flex:1;margin:0">
+        <label class="form-label">Standaard uren per taak</label>
+        <input type="number" class="form-input" id="paste-task-hours" min="0.5" max="20" step="0.5" value="1">
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px" onclick="importPastedTasks(${planId})">
+      ${icon('plus', 16)} Taken toevoegen
+    </button>
+  `);
+}
+
+function importPastedTasks(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const text = document.getElementById('paste-task-input').value;
+  const defaultSubject = document.getElementById('paste-task-subject').value;
+  const defaultHours = Math.max(0.5, parseFloat(document.getElementById('paste-task-hours').value) || 1);
+  const rows = parsePastedItems(text);
+  if (!rows.length) { alert('Geen taken gevonden — plak minstens één regel tekst.'); return; }
+  if (!defaultSubject && rows.some(r => !r.subject)) { alert('Kies een standaardvak (niet elke regel heeft een herkenbaar vak).'); return; }
+
+  let nextId = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
+  rows.forEach(r => {
+    p.tasks.push({
+      id: nextId++,
+      subject: r.subject || defaultSubject,
+      title: r.title,
+      hours: r.hours && r.hours > 0 ? Math.min(40, r.hours) : defaultHours,
+      hoursDone: 0,
+      done: false,
+    });
+  });
+  savePlans();
+  closeModal();
+  renderPage('planner');
 }
 
 function addTask(e, planId) {

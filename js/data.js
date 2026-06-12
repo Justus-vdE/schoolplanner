@@ -297,7 +297,7 @@ const magisterSubjectMap = {
   na: 'natuurkunde', nat: 'natuurkunde', natuurkunde: 'natuurkunde',
   sk: 'scheikunde', schk: 'scheikunde', scheikunde: 'scheikunde',
   nask: 'nask', nask1: 'nask', nask2: 'nask',
-  bi: 'biologie', biol: 'biologie', biologie: 'biologie',
+  bi: 'biologie', bio: 'biologie', biol: 'biologie', biologie: 'biologie',
   nlt: 'nlt',
   gs: 'geschiedenis', ges: 'geschiedenis', geschiedenis: 'geschiedenis',
   ak: 'aardrijkskunde', aardrijkskunde: 'aardrijkskunde',
@@ -363,6 +363,50 @@ function parsePastedGrades(text) {
         grade: Math.round(grade * 10) / 10,
       });
     }
+  }
+  return rows;
+}
+
+// --- Lijst met opgaves plakken (huiswerk & planner-taken) ---
+// Elke niet-lege regel wordt een losse opgave. Per regel herkennen we
+// optioneel een vak (afkorting of naam aan het begin, bv. "wi H5 opg 1-15")
+// en een tijdsduur aan het einde (bv. "... 2u" of "... 1,5 uur").
+function detectSubjectKey(token) {
+  const key = String(token || '').toLowerCase().replace(/[:.\-]+$/, '');
+  if (magisterSubjectMap[key]) return magisterSubjectMap[key];
+  const byName = Object.entries(subjects).find(([, s]) => s.name.toLowerCase() === key);
+  return byName ? byName[0] : null;
+}
+
+function parsePastedItems(text) {
+  const rows = [];
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    // Lijsttekens en tabs opruimen
+    let line = rawLine.replace(/\t+/g, ' ').replace(/^[\s•◦▪‣·–—*\->]+/, '').trim();
+    if (!line) continue;
+
+    // Vak aan het begin? Probeer eerste twee woorden ("wiskunde a") en dan het eerste
+    let subject = null;
+    const tokens = line.split(/\s+/);
+    if (tokens.length >= 2) {
+      const two = detectSubjectKey(tokens[0] + ' ' + tokens[1]);
+      if (two) { subject = two; line = tokens.slice(2).join(' '); }
+    }
+    if (!subject && tokens.length >= 1) {
+      const one = detectSubjectKey(tokens[0]);
+      if (one && tokens.length > 1) { subject = one; line = tokens.slice(1).join(' '); }
+    }
+
+    // Duur aan het einde? bv. "2u", "1,5 uur", "(2 uur)"
+    let hours = null;
+    const m = line.match(/[\s(]*(\d+(?:[.,]\d+)?)\s*(?:u|uur)\)?\s*$/i);
+    if (m) {
+      hours = parseFloat(m[1].replace(',', '.'));
+      line = line.slice(0, m.index).trim();
+    }
+
+    const title = line.replace(/[\s,;:]+$/, '').trim();
+    if (title) rows.push({ subject, title: title.slice(0, 80), hours });
   }
   return rows;
 }
