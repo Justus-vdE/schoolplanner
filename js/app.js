@@ -65,7 +65,7 @@ function renderNavbar() {
   return `
     <div class="navbar-logo">
       ${icons.graduationCap}
-      SchoolPlanner
+      Examen-Planner
     </div>
     <div class="navbar-links">
       ${navLinks}

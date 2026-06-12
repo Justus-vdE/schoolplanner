@@ -1185,6 +1185,11 @@ function renderCijfers() {
             <button class="btn btn-outline btn-sm" onclick="openPasteGradesModal()">
               &#128203; Plak uit Magister
             </button>
+            ${entries.length > 0 ? `
+            <button class="btn btn-outline btn-sm" style="color:#EF4444;border-color:#FCA5A5" onclick="deleteAllGrades()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              Alles verwijderen
+            </button>` : ''}
             <button class="btn ${magistarConnected ? 'btn-magister-connected' : 'btn-magister'} btn-sm" onclick="openMagisterModal('cijfers')">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               ${magistarConnected ? 'Magister gekoppeld' : 'Koppel Magister'}
@@ -1364,6 +1369,15 @@ function importPastedGrades() {
   renderPage('cijfers');
 }
 
+function deleteAllGrades() {
+  const total = Object.values(grades).reduce((s, d) => s + d.grades.length, 0);
+  if (!total) return;
+  if (!confirm(`Weet je het zeker? Dit verwijdert al je ${total} cijfers definitief.`)) return;
+  grades = {};
+  saveGrades();
+  renderPage('cijfers');
+}
+
 function deleteGrade(subjectId, index) {
   if (!grades[subjectId]) return;
   if (!confirm('Dit cijfer verwijderen?')) return;
@@ -1463,7 +1477,7 @@ function renderInstellingen() {
     <div class="page-content">
       <div class="page-header">
         <h1>Instellingen</h1>
-        <p>Pas je SchoolPlanner aan naar jouw wensen</p>
+        <p>Pas je Examen-Planner aan naar jouw wensen</p>
       </div>
 
       <div class="settings-grid">
