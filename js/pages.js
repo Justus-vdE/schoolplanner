@@ -1299,7 +1299,12 @@ function renderCijfers() {
   loadGrades();
   const entries = Object.entries(grades).filter(([id, d]) => subjects[id] && d.grades.length);
   const allGrades = entries.flatMap(([, s]) => s.grades);
-  const overallAvg = getAverage(allGrades);
+  let oSum = 0, oW = 0;
+  entries.forEach(([, d]) => d.grades.forEach((g, i) => {
+    const w = (d.weights && d.weights[i]) || 1;
+    oSum += g * w; oW += w;
+  }));
+  const overallAvg = oW > 0 ? (oSum / oW).toFixed(1) : '-';
   const highest = allGrades.length ? Math.max(...allGrades).toFixed(1) : '-';
   const totalTests = allGrades.length;
 
@@ -1355,7 +1360,7 @@ function renderCijfers() {
         ` : entries.map(([subjectId, data]) => {
           const s = subjects[subjectId];
           const teacher = subjectTeacher(subjectId);
-          const avg = getAverage(data.grades);
+          const avg = getWeightedAverage(data);
           const avgNum = parseFloat(avg);
           const avgClass = avgNum >= 7 ? 'grade-good' : avgNum >= 5.5 ? 'grade-ok' : 'grade-bad';
 
@@ -1374,6 +1379,7 @@ function renderCijfers() {
                   return `
                     <div class="grade-row">
                       <span class="grade-desc">${esc(data.descriptions[i])}</span>
+                      <span class="grade-weight" title="Weging">${(data.weights && data.weights[i]) || 1}&times;</span>
                       <span class="grade-value ${gClass}">${g.toFixed(1)}</span>
                       <div class="grade-actions">
                         <button class="lesson-action-btn" onclick="event.stopPropagation();openEditGradeModal('${subjectId}',${i})" title="Bewerken">
@@ -1411,9 +1417,15 @@ function openAddGradeModal() {
         <label class="form-label">Omschrijving</label>
         <input type="text" class="form-input" id="grade-desc" placeholder="Bijv. Proefwerk H5" required>
       </div>
-      <div class="form-group">
-        <label class="form-label">Cijfer</label>
-        <input type="number" class="form-input" id="grade-value" min="1" max="10" step="0.1" placeholder="Bijv. 7,5" required>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Cijfer</label>
+          <input type="number" class="form-input" id="grade-value" min="1" max="10" step="0.1" placeholder="Bijv. 7,5" required>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Weging</label>
+          <input type="number" class="form-input" id="grade-weight" min="0" max="20" step="0.5" value="1">
+        </div>
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">
         ${icon('plus', 16)} Toevoegen
@@ -1427,10 +1439,13 @@ function addGrade(e) {
   const subject = document.getElementById('grade-subject').value;
   const desc = document.getElementById('grade-desc').value.trim();
   const value = parseFloat(document.getElementById('grade-value').value);
+  const weight = parseFloat(document.getElementById('grade-weight').value);
   if (!subject || !desc || isNaN(value) || value < 1 || value > 10) return;
-  if (!grades[subject]) grades[subject] = { grades: [], descriptions: [] };
+  if (!grades[subject]) grades[subject] = { grades: [], descriptions: [], weights: [] };
+  if (!Array.isArray(grades[subject].weights)) grades[subject].weights = grades[subject].grades.map(() => 1);
   grades[subject].grades.push(Math.round(value * 10) / 10);
   grades[subject].descriptions.push(desc);
+  grades[subject].weights.push(isNaN(weight) || weight < 0 ? 1 : weight);
   saveGrades();
   closeModal();
   renderPage('cijfers');
@@ -1456,6 +1471,15 @@ function openPasteGradesModal() {
 function previewPastedGrades() {
   const text = document.getElementById('paste-grades-input').value;
   pastedGradeRows = parsePastedGrades(text);
+  renderPastedGradesPreview();
+}
+
+function removePastedGradeRow(i) {
+  pastedGradeRows.splice(i, 1);
+  renderPastedGradesPreview();
+}
+
+function renderPastedGradesPreview() {
   const box = document.getElementById('paste-grades-preview');
   if (!box) return;
 
@@ -1468,7 +1492,8 @@ function previewPastedGrades() {
     `<option value="${key}" ${key === sel ? 'selected' : ''}>${s.name}</option>`).join('');
 
   box.innerHTML = `
-    <p style="font-weight:600;margin:16px 0 8px">${pastedGradeRows.length} cijfer${pastedGradeRows.length !== 1 ? 's' : ''} herkend — controleer en pas aan:</p>
+    <p style="font-weight:600;margin:16px 0 4px">${pastedGradeRows.length} cijfer${pastedGradeRows.length !== 1 ? 's' : ''} herkend — controleer en pas aan:</p>
+    <div class="paste-preview-head"><span>Vak</span><span>Omschrijving</span><span>Weging</span><span>Cijfer</span><span></span></div>
     <div class="paste-preview-list">
       ${pastedGradeRows.map((r, i) => `
         <div class="paste-preview-row">
@@ -1477,8 +1502,9 @@ function previewPastedGrades() {
             ${subjectOptions(r.subject)}
           </select>
           <input type="text" class="form-input" value="${esc(r.desc)}" onchange="pastedGradeRows[${i}].desc=this.value">
-          <input type="number" class="form-input paste-grade-num" min="1" max="10" step="0.1" value="${r.grade}" onchange="pastedGradeRows[${i}].grade=parseFloat(this.value)">
-          <button class="lesson-action-btn delete" onclick="pastedGradeRows.splice(${i},1);previewPastedGrades()" title="Niet importeren">${icons.x}</button>
+          <input type="number" class="form-input paste-grade-num" min="0" max="20" step="0.5" value="${r.weight || 1}" onchange="pastedGradeRows[${i}].weight=parseFloat(this.value)" title="Weging">
+          <input type="number" class="form-input paste-grade-num" min="1" max="10" step="0.1" value="${r.grade}" onchange="pastedGradeRows[${i}].grade=parseFloat(this.value)" title="Cijfer">
+          <button type="button" class="lesson-action-btn delete" onclick="removePastedGradeRow(${i})" title="Niet importeren">${icons.x}</button>
         </div>
       `).join('')}
     </div>
@@ -1492,9 +1518,11 @@ function importPastedGrades() {
   const valid = pastedGradeRows.filter(r => r.subject && r.desc && !isNaN(r.grade) && r.grade >= 1 && r.grade <= 10);
   if (!valid.length) { alert('Kies bij elk cijfer eerst een vak.'); return; }
   valid.forEach(r => {
-    if (!grades[r.subject]) grades[r.subject] = { grades: [], descriptions: [] };
+    if (!grades[r.subject]) grades[r.subject] = { grades: [], descriptions: [], weights: [] };
+    if (!Array.isArray(grades[r.subject].weights)) grades[r.subject].weights = grades[r.subject].grades.map(() => 1);
     grades[r.subject].grades.push(Math.round(r.grade * 10) / 10);
     grades[r.subject].descriptions.push(r.desc);
+    grades[r.subject].weights.push(isNaN(r.weight) || r.weight < 0 ? 1 : r.weight);
   });
   saveGrades();
   pastedGradeRows = [];
@@ -1516,6 +1544,7 @@ function deleteGrade(subjectId, index) {
   if (!confirm('Dit cijfer verwijderen?')) return;
   grades[subjectId].grades.splice(index, 1);
   grades[subjectId].descriptions.splice(index, 1);
+  if (Array.isArray(grades[subjectId].weights)) grades[subjectId].weights.splice(index, 1);
   if (grades[subjectId].grades.length === 0) delete grades[subjectId];
   saveGrades();
   renderPage('cijfers');
@@ -1536,9 +1565,15 @@ function openEditGradeModal(subjectId, index) {
         <label class="form-label">Omschrijving</label>
         <input type="text" class="form-input" id="edit-grade-desc" value="${esc(data.descriptions[index])}" required>
       </div>
-      <div class="form-group">
-        <label class="form-label">Cijfer</label>
-        <input type="number" class="form-input" id="edit-grade-value" min="1" max="10" step="0.1" value="${data.grades[index]}" required>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Cijfer</label>
+          <input type="number" class="form-input" id="edit-grade-value" min="1" max="10" step="0.1" value="${data.grades[index]}" required>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Weging</label>
+          <input type="number" class="form-input" id="edit-grade-weight" min="0" max="20" step="0.5" value="${(data.weights && data.weights[index]) || 1}">
+        </div>
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Opslaan</button>
     </form>
@@ -1552,19 +1587,26 @@ function editGrade(e, subjectId, index) {
   const newSubject = document.getElementById('edit-grade-subject').value;
   const desc = document.getElementById('edit-grade-desc').value.trim();
   const value = parseFloat(document.getElementById('edit-grade-value').value);
+  const w = parseFloat(document.getElementById('edit-grade-weight').value);
+  const weight = isNaN(w) || w < 0 ? 1 : w;
   if (!newSubject || !desc || isNaN(value) || value < 1 || value > 10) return;
+  if (!Array.isArray(data.weights)) data.weights = data.grades.map(() => 1);
 
   if (newSubject === subjectId) {
     data.descriptions[index] = desc;
     data.grades[index] = Math.round(value * 10) / 10;
+    data.weights[index] = weight;
   } else {
     // Verplaatst naar een ander vak
     data.grades.splice(index, 1);
     data.descriptions.splice(index, 1);
+    data.weights.splice(index, 1);
     if (data.grades.length === 0) delete grades[subjectId];
-    if (!grades[newSubject]) grades[newSubject] = { grades: [], descriptions: [] };
+    if (!grades[newSubject]) grades[newSubject] = { grades: [], descriptions: [], weights: [] };
+    if (!Array.isArray(grades[newSubject].weights)) grades[newSubject].weights = grades[newSubject].grades.map(() => 1);
     grades[newSubject].grades.push(Math.round(value * 10) / 10);
     grades[newSubject].descriptions.push(desc);
+    grades[newSubject].weights.push(weight);
   }
   saveGrades();
   closeModal();

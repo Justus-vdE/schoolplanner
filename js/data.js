@@ -260,9 +260,26 @@ let grades = JSON.parse(JSON.stringify(defaultGrades));
 function loadGrades() {
   const saved = localStorage.getItem('sp_grades');
   if (saved) {
-    try { grades = JSON.parse(saved); return; } catch(e) {}
+    try { grades = JSON.parse(saved); } catch(e) { grades = {}; }
+  } else {
+    grades = isDemoCleared() ? {} : JSON.parse(JSON.stringify(defaultGrades));
   }
-  grades = isDemoCleared() ? {} : JSON.parse(JSON.stringify(defaultGrades));
+  // Migratie: zorg dat elk vak een wegingen-lijst heeft (standaard 1)
+  Object.values(grades).forEach(d => {
+    if (!Array.isArray(d.weights)) d.weights = [];
+    while (d.weights.length < d.grades.length) d.weights.push(1);
+  });
+}
+
+// Gewogen gemiddelde van één vak
+function getWeightedAverage(data) {
+  let sum = 0, tw = 0;
+  data.grades.forEach((g, i) => {
+    const w = (data.weights && data.weights[i]) || 1;
+    sum += g * w;
+    tw += w;
+  });
+  return tw > 0 ? (sum / tw).toFixed(1) : '-';
 }
 
 function saveGrades() {
@@ -352,15 +369,22 @@ function parsePastedGrades(text) {
       else cleanDesc.push(part);
     }
     let grade = null;
+    let gradeToken = null;
     const decimals = gradeTokens.filter(g => g.decimal);
-    if (decimals.length) grade = decimals[0].value;
-    else if (gradeTokens.length === 1) grade = gradeTokens[0].value;
+    if (decimals.length) { gradeToken = decimals[0]; grade = gradeToken.value; }
+    else if (gradeTokens.length === 1) { gradeToken = gradeTokens[0]; grade = gradeToken.value; }
+
+    // Weging: het eerste hele getal (1-10) dat níet het cijfer zelf is
+    let weight = 1;
+    const weightToken = gradeTokens.find(g => g !== gradeToken && !g.decimal && Number.isInteger(g.value) && g.value >= 1 && g.value <= 10);
+    if (weightToken) weight = weightToken.value;
 
     if (grade != null && grade >= 1 && grade <= 10) {
       rows.push({
         subject: subject || '',
         desc: cleanDesc.join(' ').slice(0, 60) || 'Cijfer uit Magister',
         grade: Math.round(grade * 10) / 10,
+        weight,
       });
     }
   }
