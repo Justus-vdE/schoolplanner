@@ -471,7 +471,11 @@ function parseIcs(text) {
   for (const line of unfolded.split(/\r?\n/)) {
     if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
     if (line === 'END:VEVENT') {
-      if (cur && cur.start && cur.end) events.push(cur);
+      if (cur && cur.start) {
+        if (!cur.end) cur.end = cur.start;
+        cur.allDay = !!cur.start._allDay;
+        events.push(cur);
+      }
       cur = null; continue;
     }
     if (!cur) continue;
@@ -490,10 +494,19 @@ function parseIcs(text) {
 
 function parseIcsDate(v) {
   const m = String(v).match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
-  if (!m) return null;
-  const [, y, mo, d, h, mi, s, z] = m;
-  if (z === 'Z') return new Date(Date.UTC(+y, mo - 1, +d, +h, +mi, +s));
-  return new Date(+y, mo - 1, +d, +h, +mi, +s);
+  if (m) {
+    const [, y, mo, d, h, mi, s, z] = m;
+    if (z === 'Z') return new Date(Date.UTC(+y, mo - 1, +d, +h, +mi, +s));
+    return new Date(+y, mo - 1, +d, +h, +mi, +s);
+  }
+  // Hele-dag-afspraken: alleen een datum (VALUE=DATE)
+  const md = String(v).match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (md) {
+    const dt = new Date(+md[1], md[2] - 1, +md[3]);
+    dt._allDay = true;
+    return dt;
+  }
+  return null;
 }
 
 // Bouwt een week-rooster (maandag t/m vrijdag) uit agenda-items: voor elke
@@ -533,6 +546,61 @@ function icsToWeekSchedule(events) {
     });
   });
   return result;
+}
+
+// --- Gekoppelde agenda's (Google / Apple / Outlook via iCal-link) ---
+let icalFeeds = [];          // [{ id, name, url, lastSync }]
+let icalEventsCache = {};    // feedId -> [{ date, title, time, allDay }]
+
+function loadIcalFeeds() {
+  try { icalFeeds = JSON.parse(localStorage.getItem('sp_ical_feeds') || '[]'); } catch (e) { icalFeeds = []; }
+  try { icalEventsCache = JSON.parse(localStorage.getItem('sp_ical_events') || '{}'); } catch (e) { icalEventsCache = {}; }
+}
+
+function saveIcalFeeds() {
+  localStorage.setItem('sp_ical_feeds', JSON.stringify(icalFeeds));
+  localStorage.setItem('sp_ical_events', JSON.stringify(icalEventsCache));
+}
+
+// Alle agenda-items uit gekoppelde kalenders, als agenda-events (alleen-lezen)
+function icalAgendaEvents() {
+  const out = [];
+  icalFeeds.forEach(feed => {
+    (icalEventsCache[feed.id] || []).forEach((ev, i) => {
+      out.push({
+        id: 'ical-' + feed.id + '-' + i,
+        date: new Date(ev.date),
+        title: ev.title,
+        time: ev.time,
+        type: 'ical',
+        source: feed.name,
+        readonly: true,
+      });
+    });
+  });
+  return out;
+}
+
+// Eigen events + gekoppelde agenda's samen (voor agenda en kalenders)
+function allAgendaEvents() {
+  return events.concat(icalAgendaEvents());
+}
+
+// Zet geparste iCal-events om naar compacte agenda-items (komende ~3 maanden)
+function icalToAgendaItems(parsed) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const min = addDays(startOfDay(today), -7);
+  const max = addDays(startOfDay(today), 90);
+  return parsed
+    .filter(ev => ev.start >= min && ev.start <= max)
+    .sort((a, b) => a.start - b.start)
+    .slice(0, 400)
+    .map(ev => ({
+      date: ev.start.toISOString(),
+      title: (ev.summary || 'Afspraak').slice(0, 80),
+      time: ev.allDay ? 'Hele dag' : `${pad(ev.start.getHours())}:${pad(ev.start.getMinutes())} - ${pad(ev.end.getHours())}:${pad(ev.end.getMinutes())}`,
+      allDay: !!ev.allDay,
+    }));
 }
 
 // --- Voorbeelddata wissen ---
@@ -584,6 +652,7 @@ const eventTypeColors = {
   deadline: { bg: '#FEE2E2', text: '#991B1B', label: 'Deadline' },
   toets:    { bg: '#FEF3C7', text: '#92400E', label: 'Toets' },
   les:      { bg: '#D1FAE5', text: '#065F46', label: 'Les' },
+  ical:     { bg: '#E0E7FF', text: '#3730A3', label: 'Agenda' },
 };
 
 // --- Streak ---

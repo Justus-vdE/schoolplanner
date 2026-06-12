@@ -933,9 +933,9 @@ function renderAgenda() {
   const daysInMonth = new Date(agendaYear, agendaMonth + 1, 0).getDate();
   const daysInPrevMonth = new Date(agendaYear, agendaMonth, 0).getDate();
 
-  // Build event map
+  // Build event map (eigen events + gekoppelde agenda's)
   const eventMap = {};
-  events.forEach(e => {
+  allAgendaEvents().forEach(e => {
     const d = new Date(e.date);
     const key = d.toDateString();
     if (!eventMap[key]) eventMap[key] = [];
@@ -983,8 +983,9 @@ function renderAgenda() {
     calendarDays += `<div class="calendar-full-day other-month">${d}</div>`;
   }
 
-  // Calendar connections
-  const connectedCals = Object.entries(calendarConnections).filter(([k,v]) => v);
+  // Gekoppelde agenda's
+  loadIcalFeeds();
+  const connectedCals = icalFeeds;
 
   return `
     <div class="page-content">
@@ -1006,12 +1007,7 @@ function renderAgenda() {
 
       ${connectedCals.length > 0 ? `
         <div class="connected-calendars-bar">
-          ${connectedCals.map(([key]) => {
-            const info = calendarApps[key];
-            return `<span class="connected-cal-badge" style="background:${info.lightBg};color:${info.color}">
-              ${info.icon} ${info.name}
-            </span>`;
-          }).join('')}
+          ${connectedCals.map(f => `<span class="connected-cal-badge" style="background:#E0E7FF;color:#3730A3">&#128197; ${esc(f.name)}</span>`).join('')}
         </div>
       ` : ''}
 
@@ -1037,21 +1033,22 @@ function renderAgenda() {
             </div>
             ${selectedEvents.length > 0 ? selectedEvents.map(e => {
               const typeInfo = eventTypeColors[e.type] || { bg: '#F3F4F6', text: '#374151', label: 'Overig' };
+              const badgeLabel = e.type === 'ical' ? esc(e.source || 'Agenda') : typeInfo.label;
               return `
                 <div class="event-item">
                   <span class="event-time">${e.time}</span>
                   <div class="event-info">
                     <div class="event-title">${esc(e.title)}</div>
-                    <span class="event-type-badge" style="background:${typeInfo.bg};color:${typeInfo.text}">${typeInfo.label}</span>
+                    <span class="event-type-badge" style="background:${typeInfo.bg};color:${typeInfo.text}">${badgeLabel}</span>
                   </div>
-                  <div class="event-actions">
+                  ${e.readonly ? '' : `<div class="event-actions">
                     <button class="lesson-action-btn" onclick="openEditEventModal(${e.id})" title="Bewerken">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                     </button>
                     <button class="lesson-action-btn delete" onclick="deleteEvent(${e.id})" title="Verwijderen">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                     </button>
-                  </div>
+                  </div>`}
                 </div>
               `;
             }).join('') : `
@@ -1065,15 +1062,16 @@ function renderAgenda() {
             <div class="card-header">
               <div class="card-title">${icon('clock')} Binnenkort</div>
             </div>
-            ${events.filter(e => new Date(e.date) >= today).slice(0, 5).map(e => {
+            ${allAgendaEvents().filter(e => new Date(e.date) >= today).sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 5).map(e => {
               const typeInfo = eventTypeColors[e.type] || { bg: '#F3F4F6', text: '#374151', label: 'Overig' };
+              const badgeLabel = e.type === 'ical' ? esc(e.source || 'Agenda') : typeInfo.label;
               const due = getDueText(e.date);
               return `
                 <div class="event-item" style="cursor:pointer" onclick="selectAgendaDate(${new Date(e.date).getFullYear()},${new Date(e.date).getMonth()},${new Date(e.date).getDate()})">
                   <span class="event-time">${due.text}</span>
                   <div class="event-info">
                     <div class="event-title">${esc(e.title)}</div>
-                    <span class="event-type-badge" style="background:${typeInfo.bg};color:${typeInfo.text}">${typeInfo.label}</span>
+                    <span class="event-type-badge" style="background:${typeInfo.bg};color:${typeInfo.text}">${badgeLabel}</span>
                   </div>
                 </div>
               `;
@@ -1210,86 +1208,119 @@ function deleteEvent(id) {
 }
 
 // --- Calendar Connections ---
-const calendarApps = {
-  google:  { name: 'Google Calendar',    icon: '&#x1F7E2;', color: '#1A73E8', lightBg: '#E8F0FE' },
-  apple:   { name: 'Apple Kalender',     icon: '&#x1F34E;', color: '#333333', lightBg: '#F5F5F5' },
-  outlook: { name: 'Outlook Kalender',   icon: '&#x1F4E7;', color: '#0078D4', lightBg: '#E1F0FF' },
-  ical:    { name: 'iCal / CalDAV',      icon: '&#x1F4C5;', color: '#5856D6', lightBg: '#EEEDFC' },
-};
-
 function openCalendarConnectModal() {
+  loadIcalFeeds();
+  const dt = (iso) => { const d = new Date(iso); return `${d.getDate()}-${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
   openModal('Kalender koppelen', `
-    <div class="connect-modal">
-      <p class="connect-desc">Verbind je agenda met externe kalender apps om events automatisch te synchroniseren.</p>
-      <div class="calendar-connect-list">
-        ${Object.entries(calendarApps).map(([key, app]) => {
-          const isConnected = calendarConnections[key] === true;
-          const account = calendarAccounts[key] || {};
-          return `
-            <div class="calendar-connect-item ${isConnected ? 'connected' : ''}">
-              <div class="calendar-connect-info">
-                <span class="calendar-connect-icon" style="color:${app.color}">${app.icon}</span>
-                <div>
-                  <div class="calendar-connect-name">${app.name}</div>
-                  <div class="calendar-connect-status">${isConnected ? `Verbonden als ${account.email || 'onbekend'}` : 'Niet verbonden'}</div>
-                </div>
-              </div>
-              <button class="btn ${isConnected ? 'btn-outline' : 'btn-primary'} btn-sm"
-                onclick="${isConnected ? `disconnectCalendar('${key}')` : `openCalendarLoginModal('${key}')`}">
-                ${isConnected ? 'Ontkoppelen' : 'Verbinden'}
-              </button>
+    ${icalFeeds.length ? `
+      <div class="ical-feed-list">
+        ${icalFeeds.map(f => `
+          <div class="ical-feed-row">
+            <div class="ical-feed-info">
+              <strong>&#128197; ${esc(f.name)}</strong>
+              <span>${(icalEventsCache[f.id] || []).length} afspraken · vernieuwd ${f.lastSync ? dt(f.lastSync) : 'nooit'}</span>
             </div>
-          `;
-        }).join('')}
+            <button class="lesson-action-btn" onclick="refreshIcalFeed(${f.id})" title="Vernieuwen" id="ical-refresh-${f.id}">&#128260;</button>
+            <button class="lesson-action-btn delete" onclick="removeIcalFeed(${f.id})" title="Ontkoppelen">${icons.x}</button>
+          </div>
+        `).join('')}
+      </div>
+      <div class="login-divider"><span>nieuwe agenda toevoegen</span></div>
+    ` : `
+      <p class="connect-desc" style="text-align:left">Koppel je agenda via een <strong>iCal-link</strong> — alleen-lezen, geen wachtwoord nodig. Zo vind je de link:</p>
+    `}
+    <div class="ical-help">
+      <details>
+        <summary>&#128197; Google Calendar</summary>
+        <ol><li>Open <strong>calendar.google.com</strong> op een computer</li><li>Tandwiel &rarr; <strong>Instellingen</strong> &rarr; klik links op jouw agenda</li><li>Scroll naar <strong>"Agenda integreren"</strong></li><li>Kopieer het <strong>"Geheime adres in iCal-indeling"</strong></li></ol>
+      </details>
+      <details>
+        <summary>&#127822; Apple / iCloud</summary>
+        <ol><li>Ga naar <strong>icloud.com/calendar</strong> (of de Agenda-app op Mac)</li><li>Klik op het <strong>deel-icoontje</strong> naast je agenda</li><li>Zet <strong>"Openbare agenda"</strong> aan</li><li>Kopieer de link (begint met webcal://)</li></ol>
+      </details>
+      <details>
+        <summary>&#128231; Outlook</summary>
+        <ol><li>Open <strong>outlook.com</strong> &rarr; Agenda</li><li>Instellingen &rarr; <strong>Gedeelde agenda's</strong></li><li>Bij "Een agenda publiceren": kies je agenda &rarr; <strong>Publiceren</strong></li><li>Kopieer de <strong>ICS-link</strong></li></ol>
+      </details>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <div class="form-group" style="flex:0 0 35%;margin:0">
+        <label class="form-label">Naam</label>
+        <input type="text" class="form-input" id="ical-name" placeholder="Bijv. Privé">
+      </div>
+      <div class="form-group" style="flex:1;margin:0">
+        <label class="form-label">iCal-link</label>
+        <input type="text" class="form-input" id="ical-url" placeholder="https://... of webcal://...">
       </div>
     </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px" onclick="addIcalFeed()" id="ical-add-btn">
+      Koppel &amp; importeer
+    </button>
   `);
 }
 
-function openCalendarLoginModal(key) {
-  const app = calendarApps[key];
-  openModal(`Inloggen bij ${app.name}`, `
-    <div class="connect-modal">
-      <div class="connect-icon-large">
-        <span style="font-size:48px;color:${app.color}">${app.icon}</span>
-      </div>
-      <p class="connect-desc">Log in met je ${app.name} account om je agenda te synchroniseren.</p>
-      <div class="demo-note">&#9888;&#65039; Demo: er wordt geen echte verbinding gemaakt. Vul hier <strong>niet</strong> je echte wachtwoord in.</div>
-      <form onsubmit="connectCalendar(event, '${key}')">
-        <div class="form-group">
-          <label class="form-label">E-mailadres</label>
-          <input type="email" class="form-input" id="cal-email-${key}" placeholder="je@email.com" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Wachtwoord</label>
-          <input type="password" class="form-input" id="cal-pass-${key}" placeholder="Je wachtwoord..." required>
-        </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;background:${app.color}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          Verbinden met ${app.name}
-        </button>
-      </form>
-      <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center;margin-top:8px" onclick="openCalendarConnectModal()">
-        ← Terug naar overzicht
-      </button>
-    </div>
-  `);
+async function addIcalFeed() {
+  let url = (document.getElementById('ical-url').value || '').trim();
+  const name = (document.getElementById('ical-name').value || '').trim();
+  if (!url) { alert('Plak eerst de iCal-link van je agenda.'); return; }
+  url = url.replace(/^webcal:\/\//i, 'https://');
+  if (!/^https:\/\//i.test(url)) { alert('Dat lijkt geen geldige link. Hij moet beginnen met https:// of webcal://'); return; }
+
+  const btn = document.getElementById('ical-add-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Bezig met ophalen...'; }
+  try {
+    const items = await fetchIcalItems(url);
+    const id = Date.now();
+    let feedName = name;
+    if (!feedName) {
+      try { feedName = new URL(url).hostname.replace('www.', '').split('.')[0]; } catch (e) { feedName = 'Agenda'; }
+      feedName = feedName.charAt(0).toUpperCase() + feedName.slice(1);
+    }
+    icalFeeds.push({ id, name: feedName, url, lastSync: new Date().toISOString() });
+    icalEventsCache[id] = items;
+    saveIcalFeeds();
+    openCalendarConnectModal();
+    renderPage(currentPage);
+  } catch (err) {
+    const offline = location.protocol === 'file:';
+    alert('Koppelen mislukt: ' + (offline
+      ? 'dit werkt alleen op de online versie (examen-planner.nl).'
+      : (err.message || 'onbekende fout')));
+    if (btn) { btn.disabled = false; btn.textContent = 'Koppel & importeer'; }
+  }
 }
 
-function connectCalendar(e, key) {
-  e.preventDefault();
-  const email = document.getElementById('cal-email-' + key).value.trim();
-  calendarConnections[key] = true;
-  calendarAccounts[key] = { email, connectedAt: new Date().toISOString() };
-  saveCalendarConnections();
-  openCalendarConnectModal();
-  renderPage(currentPage);
+async function fetchIcalItems(url) {
+  const resp = await fetch('/api/ics?url=' + encodeURIComponent(url));
+  if (!resp.ok) throw new Error(await resp.text() || ('Fout ' + resp.status));
+  const items = icalToAgendaItems(parseIcs(await resp.text()));
+  if (!items.length) throw new Error('Geen afspraken gevonden in deze agenda (voor de komende 3 maanden).');
+  return items;
 }
 
-function disconnectCalendar(key) {
-  calendarConnections[key] = false;
-  delete calendarAccounts[key];
-  saveCalendarConnections();
+async function refreshIcalFeed(id) {
+  const feed = icalFeeds.find(f => f.id === id);
+  if (!feed) return;
+  const btn = document.getElementById('ical-refresh-' + id);
+  if (btn) btn.textContent = '⏳';
+  try {
+    icalEventsCache[id] = await fetchIcalItems(feed.url);
+    feed.lastSync = new Date().toISOString();
+    saveIcalFeeds();
+    openCalendarConnectModal();
+    renderPage(currentPage);
+  } catch (err) {
+    alert('Vernieuwen mislukt: ' + (err.message || 'onbekende fout'));
+    if (btn) btn.textContent = '🔄';
+  }
+}
+
+function removeIcalFeed(id) {
+  if (!confirm('Deze agenda ontkoppelen? De geïmporteerde afspraken verdwijnen uit je Agenda.')) return;
+  icalFeeds = icalFeeds.filter(f => f.id !== id);
+  delete icalEventsCache[id];
+  saveIcalFeeds();
   openCalendarConnectModal();
   renderPage(currentPage);
 }
@@ -1783,6 +1814,7 @@ function addTodo() {
 // ==================== INSTELLINGEN ====================
 function renderInstellingen() {
   loadSettings();
+  loadIcalFeeds();
 
   return `
     <div class="page-content">
@@ -1911,21 +1943,15 @@ function renderInstellingen() {
                 ${magistarConnected ? 'Beheren' : 'Verbinden'}
               </button>
             </div>
-            ${Object.entries(calendarApps).map(([key, app]) => {
-              const isConn = calendarConnections[key] === true;
-              const account = calendarAccounts[key] || {};
-              return `
-                <div class="settings-connect-row">
-                  <div class="settings-connect-info">
-                    <strong>${app.icon} ${app.name}</strong>
-                    <span class="settings-connect-status ${isConn ? 'active' : ''}">${isConn ? `Verbonden als ${account.email || 'onbekend'}` : 'Niet verbonden'}</span>
-                  </div>
-                  <button class="btn ${isConn ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="${isConn ? `disconnectCalendar('${key}')` : `openCalendarLoginModal('${key}')`}">
-                    ${isConn ? 'Ontkoppelen' : 'Verbinden'}
-                  </button>
-                </div>
-              `;
-            }).join('')}
+            <div class="settings-connect-row">
+              <div class="settings-connect-info">
+                <strong>&#128197; Agenda's (Google, Apple, Outlook...)</strong>
+                <span class="settings-connect-status ${icalFeeds.length ? 'active' : ''}">${icalFeeds.length ? `${icalFeeds.length} agenda${icalFeeds.length !== 1 ? "'s" : ''} gekoppeld` : 'Niet gekoppeld'}</span>
+              </div>
+              <button class="btn ${icalFeeds.length ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="openCalendarConnectModal()">
+                ${icalFeeds.length ? 'Beheren' : 'Koppelen'}
+              </button>
+            </div>
           </div>
         </div>
 

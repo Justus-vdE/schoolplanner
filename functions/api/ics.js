@@ -13,20 +13,25 @@ export async function onRequest({ request }) {
   if (u.protocol !== 'https:') {
     return new Response('Alleen https-links zijn toegestaan', { status: 400 });
   }
-  const host = u.hostname.toLowerCase();
-  const allowed = host === 'magister.net'
-    || host.endsWith('.magister.net')
-    || host.endsWith('.magister.nl');
-  if (!allowed) {
-    return new Response('Alleen Magister-links zijn toegestaan', { status: 400 });
-  }
-
   const upstream = await fetch(u.toString(), {
     headers: { 'Accept': 'text/calendar, text/plain, */*' },
   });
+  if (!upstream.ok) {
+    return new Response('De agenda-dienst gaf een fout (' + upstream.status + '). Controleer of de link klopt en de koppeling/publicatie aan staat.', { status: 502 });
+  }
   const body = await upstream.text();
+  // Elke aanbieder is welkom (Google, Apple, Outlook, Magister, school…),
+  // maar het antwoord MOET een echt iCal-bestand zijn — anders is dit een
+  // open doorgeefluik dat misbruikt kan worden om willekeurige sites op te
+  // halen. Ook een maat-limiet om misbruik te voorkomen.
+  if (!/^\s*BEGIN:VCALENDAR/i.test(body.slice(0, 200))) {
+    return new Response('Deze link is geen agenda (iCal). Kopieer de iCal/ICS-link uit je agenda-app.', { status: 400 });
+  }
+  if (body.length > 3_000_000) {
+    return new Response('Deze agenda is te groot om te importeren.', { status: 413 });
+  }
   return new Response(body, {
-    status: upstream.status,
+    status: 200,
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
       'Cache-Control': 'no-store',

@@ -132,6 +132,7 @@ function initApp() {
   loadEvents();
   loadPlans();
   loadGrades();
+  loadIcalFeeds();
 
   // Parse hash
   const hash = window.location.hash.slice(1);

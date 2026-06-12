@@ -118,7 +118,7 @@ function renderMiniCalendar(year, month) {
 
   // Build event date set for this month
   const eventDates = new Set();
-  events.forEach(e => {
+  allAgendaEvents().forEach(e => {
     const d = new Date(e.date);
     if (d.getMonth() === month && d.getFullYear() === year) {
       eventDates.add(d.getDate());
