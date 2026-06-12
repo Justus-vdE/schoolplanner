@@ -2030,6 +2030,55 @@ function updateSetting(key, value) {
   }
 }
 
+// --- Help ---
+function openHelpModal() {
+  openModal('Help', `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="closeModal();showOnboarding('tour')">
+        &#128640; Start de rondleiding
+      </button>
+      <button class="btn btn-outline btn-sm" style="flex:1;justify-content:center" onclick="closeModal();navigate('instellingen')">
+        &#9881;&#65039; Naar instellingen
+      </button>
+    </div>
+    <div class="ical-help">
+      <details>
+        <summary>&#127919; Hoe maak ik een planning voor mijn toetsweek of examen?</summary>
+        <ol><li>Ga naar <strong>Planner</strong> &rarr; <strong>Nieuwe planning</strong></li><li>Kies type, datum en hoeveel dagen van tevoren je klaar wilt zijn</li><li>Voeg je toetsen toe (of <em>Importeer uit Toetsen</em>)</li><li>Vul je <strong>beschikbare tijd</strong> in en voeg <strong>taken</strong> toe met geschatte uren</li><li>Je studieschema wordt automatisch verdeeld over je dagen</li></ol>
+      </details>
+      <details>
+        <summary>&#9201;&#65039; Wat betekent "voor/achter op schema"?</summary>
+        <p style="margin:8px 0 4px">De app berekent hoeveel uur je volgens je planning gedaan zou moeten hebben. Log je uren na het leren (knop <em>Uren loggen</em> bij een taak), dan zie je het verschil in uren. Een dag overslaan = achterstand die je moet inhalen.</p>
+      </details>
+      <details>
+        <summary>&#128279; Hoe koppel ik mijn Magister-rooster?</summary>
+        <ol><li>Open Magister &rarr; <strong>Agenda</strong> &rarr; tandwiel &rarr; <strong>Agenda koppelen</strong> &rarr; zet aan en kopieer de link</li><li>In de app: <strong>Rooster</strong> &rarr; <strong>Koppel Magister</strong> &rarr; link plakken</li></ol>
+        <p style="margin:4px 0">Geen wachtwoord nodig. Vernieuwen kan daarna met &eacute;&eacute;n klik.</p>
+      </details>
+      <details>
+        <summary>&#128202; Hoe krijg ik mijn cijfers er snel in?</summary>
+        <p style="margin:8px 0 4px">Selecteer je cijferoverzicht in Magister, kopieer het, en gebruik <strong>Cijfers</strong> &rarr; <strong>&#128203; Plak uit Magister</strong>. Vakken, cijfers en wegingen worden herkend; je controleert alles voordat het wordt opgeslagen.</p>
+      </details>
+      <details>
+        <summary>&#128203; Kan ik een hele lijst opgaves tegelijk toevoegen?</summary>
+        <p style="margin:8px 0 4px">Ja — bij <strong>Huiswerk</strong> en bij de <strong>Planner-taken</strong> zit een knop <em>Lijst plakken</em>. Elke regel wordt een losse opgave. Tip: begin een regel met een vakafkorting (wi, ne, bio...) en zet er bij taken een duur achter ("2u").</p>
+      </details>
+      <details>
+        <summary>&#128198; Hoe koppel ik mijn Google/Apple/Outlook-agenda?</summary>
+        <p style="margin:8px 0 4px"><strong>Agenda</strong> &rarr; <strong>Kalender koppelen</strong>. Daar staat per app uitgelegd waar je de iCal-link vindt. Plakken, klaar — je afspraken verschijnen alleen-lezen in je agenda.</p>
+      </details>
+      <details>
+        <summary>&#128190; Raak ik mijn gegevens kwijt?</summary>
+        <p style="margin:8px 0 4px">Je gegevens staan in deze browser op dit apparaat. Wis je je browsergeschiedenis, dan ben je ze kwijt — maak daarom regelmatig een back-up via <strong>Instellingen</strong> &rarr; <strong>Download back-up</strong>. Dat bestand kun je altijd (ook op een ander apparaat) terugzetten.</p>
+      </details>
+      <details>
+        <summary>&#129529; Hoe kom ik van de voorbeelddata af?</summary>
+        <p style="margin:8px 0 4px"><strong>Instellingen</strong> &rarr; <strong>Wis voorbeelddata</strong>. Je eigen invoer blijft staan.</p>
+      </details>
+    </div>
+  `);
+}
+
 // --- Back-up: alle app-gegevens exporteren / terugzetten ---
 function exportBackup() {
   const data = {};
