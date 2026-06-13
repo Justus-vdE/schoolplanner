@@ -944,44 +944,70 @@ function buildSchedule(plan) {
     });
   }
 
-  // Resterende uren per taak (klaar = niet meer inplannen), op deadline gesorteerd
-  const items = plan.tasks
-    .map(t => ({
-      task: t,
-      rem: Math.max(0, (t.hours || 0) - Math.max(0, t.hoursDone || 0)),
-      due: taskDue(plan, t, deadline),
-    }))
-    .filter(i => i.rem > 0.0001)
-    .sort((a, b) => a.due - b.due);
+  let overflow = 0;
+  let unscheduled = 0;
+  const manual = !!plan.manualSchedule;
 
-  for (const day of days) {
-    let free = day.capacity;
-    const byTask = new Map();
-    let guard = 0;
-    while (free > 0.0001 && guard++ < 500) {
-      const eligible = items.filter(i => i.rem > 0.0001 && i.due >= day.date);
-      if (!eligible.length) break;
-      let allocated = false;
-      for (const it of eligible) {
-        if (free <= 0.0001) break;
-        const chunk = Math.min(1, it.rem, free);
-        if (chunk <= 0.0001) continue;
-        byTask.set(it.task.id, (byTask.get(it.task.id) || 0) + chunk);
-        it.rem -= chunk;
-        free -= chunk;
-        allocated = true;
-      }
-      if (!allocated) break;
-    }
-    items.forEach(it => {
-      const h = byTask.get(it.task.id);
-      if (h) day.assignments.push({ taskId: it.task.id, subject: it.task.subject, title: it.task.title, hours: h });
+  if (manual) {
+    // Handmatig schema: plaats precies wat de gebruiker heeft ingedeeld
+    const dayByKey = {};
+    days.forEach(d => { dayByKey[d.key] = d; });
+    Object.entries(plan.manualSchedule).forEach(([key, arr]) => {
+      const day = dayByKey[key];
+      if (!day) return;
+      arr.forEach(a => {
+        const t = plan.tasks.find(x => x.id === a.taskId);
+        if (!t) return;
+        day.assignments.push({ taskId: t.id, subject: t.subject, title: t.title, hours: a.hours });
+        day.used += a.hours;
+      });
     });
-    day.used = day.capacity - free;
-  }
+    // Hoeveel uur is er nog niet ingepland?
+    plan.tasks.forEach(t => {
+      let planned = 0;
+      Object.values(plan.manualSchedule).forEach(arr => arr.forEach(a => { if (a.taskId === t.id) planned += a.hours; }));
+      const need = Math.max(0, (t.hours || 0) - Math.max(0, t.hoursDone || 0));
+      if (need - planned > 0.001) unscheduled += need - planned;
+    });
+  } else {
+    // Automatisch: resterende uren per taak (op deadline gesorteerd), afwisselend verdeeld
+    const items = plan.tasks
+      .map(t => ({
+        task: t,
+        rem: Math.max(0, (t.hours || 0) - Math.max(0, t.hoursDone || 0)),
+        due: taskDue(plan, t, deadline),
+      }))
+      .filter(i => i.rem > 0.0001)
+      .sort((a, b) => a.due - b.due);
 
-  // Wat nergens meer past (vóór de eigen toets/deadline) telt als tekort
-  const overflow = items.reduce((s, i) => s + i.rem, 0);
+    for (const day of days) {
+      let free = day.capacity;
+      const byTask = new Map();
+      let guard = 0;
+      while (free > 0.0001 && guard++ < 500) {
+        const eligible = items.filter(i => i.rem > 0.0001 && i.due >= day.date);
+        if (!eligible.length) break;
+        let allocated = false;
+        for (const it of eligible) {
+          if (free <= 0.0001) break;
+          const chunk = Math.min(1, it.rem, free);
+          if (chunk <= 0.0001) continue;
+          byTask.set(it.task.id, (byTask.get(it.task.id) || 0) + chunk);
+          it.rem -= chunk;
+          free -= chunk;
+          allocated = true;
+        }
+        if (!allocated) break;
+      }
+      items.forEach(it => {
+        const h = byTask.get(it.task.id);
+        if (h) day.assignments.push({ taskId: it.task.id, subject: it.task.subject, title: it.task.title, hours: h });
+      });
+      day.used = day.capacity - free;
+    }
+    // Wat nergens meer past (vóór de eigen toets/deadline) telt als tekort
+    overflow = items.reduce((s, i) => s + i.rem, 0);
+  }
 
   // Voor dagen met tijdblokken: zet de toegewezen uren om in concrete tijdslots.
   days.forEach(day => {
@@ -1004,7 +1030,26 @@ function buildSchedule(plan) {
   });
 
   const totalCapacity = days.reduce((s, d) => s + d.capacity, 0);
-  return { days, overflow, totalCapacity };
+  return { days, overflow, unscheduled, manual, totalCapacity };
+}
+
+// Helpers voor het handmatige schema
+function manualScheduleAdd(plan, key, taskId, hours) {
+  if (!plan.manualSchedule) plan.manualSchedule = {};
+  if (!plan.manualSchedule[key]) plan.manualSchedule[key] = [];
+  const ex = plan.manualSchedule[key].find(a => a.taskId === taskId);
+  if (ex) ex.hours = Math.round((ex.hours + hours) * 100) / 100;
+  else plan.manualSchedule[key].push({ taskId, hours });
+}
+
+function manualScheduleRemove(plan, key, taskId, hours) {
+  const ms = plan.manualSchedule;
+  if (!ms || !ms[key]) return;
+  const ex = ms[key].find(a => a.taskId === taskId);
+  if (!ex) return;
+  ex.hours = hours == null ? 0 : Math.round((ex.hours - hours) * 100) / 100;
+  if (ex.hours <= 0.001) ms[key] = ms[key].filter(a => a !== ex);
+  if (ms[key].length === 0) delete ms[key];
 }
 
 // Berekent voortgang en of je voor/achter op schema loopt.
@@ -1022,13 +1067,21 @@ function planStatus(plan) {
   const deadline = planDeadline(plan);
   const start = startOfDay(plan.startDate ? new Date(plan.startDate) : today);
 
-  let capTotal = 0, capElapsed = 0, guard = 0;
-  for (let d = new Date(start); d <= deadline && guard++ < 400; d = addDays(d, 1)) {
-    const c = Math.max(0, availabilityFor(plan, d));
-    capTotal += c;
-    if (d <= today0) capElapsed += c;
+  let expectedByToday;
+  if (sched.manual) {
+    // Handmatig schema: wat je volgens je eigen indeling t/m vandaag gepland had
+    expectedByToday = sched.days.reduce((s, d) => d.date <= today0 ? s + d.used : s, 0);
+    expectedByToday = Math.min(totalNeeded, expectedByToday);
+  } else {
+    // Automatisch: vaste lijn op basis van verstreken beschikbare tijd
+    let capTotal = 0, capElapsed = 0, guard = 0;
+    for (let d = new Date(start); d <= deadline && guard++ < 400; d = addDays(d, 1)) {
+      const c = Math.max(0, availabilityFor(plan, d));
+      capTotal += c;
+      if (d <= today0) capElapsed += c;
+    }
+    expectedByToday = capTotal > 0 ? Math.min(totalNeeded, totalNeeded * (capElapsed / capTotal)) : 0;
   }
-  const expectedByToday = capTotal > 0 ? Math.min(totalNeeded, totalNeeded * (capElapsed / capTotal)) : 0;
 
   const diff = totalDone - expectedByToday; // positief = vóór op schema
 

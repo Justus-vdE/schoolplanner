@@ -2656,26 +2656,51 @@ function renderWeekStrip(sched) {
 }
 
 function renderPlanScheduleView(plan, sched) {
-  const daysWithWork = sched.days.filter(d => d.assignments.length > 0);
-  if (daysWithWork.length === 0) {
-    return '<div class="empty-state empty-state-compact"><p>Voeg taken en beschikbare tijd toe — dan verschijnt hier je dagindeling.</p></div>';
-  }
   const today0 = startOfDay(today);
+  const manual = sched.manual;
+  const daysWithWork = sched.days.filter(d => d.assignments.length > 0);
+
+  // Bewerk-balk
+  const editBar = `
+    <div class="schedule-editbar">
+      ${manual
+        ? `<span class="schedule-mode">${icon('settings', 13)} Handmatig schema</span>
+           <button class="btn btn-outline btn-sm" onclick="resetSchedule(${plan.id})">&#8635; Herstel automatisch</button>`
+        : `<span class="schedule-mode auto">&#10024; Automatisch ingedeeld</span>
+           <button class="btn btn-outline btn-sm" onclick="enterManualSchedule(${plan.id})">${icon('settings', 13)} Schema aanpassen</button>`}
+    </div>`;
+
+  if (daysWithWork.length === 0 && !manual) {
+    return editBar + '<div class="empty-state empty-state-compact"><p>Voeg taken en beschikbare tijd toe — dan verschijnt hier je dagindeling.</p></div>';
+  }
+
+  const unschedBanner = (manual && sched.unscheduled > 0.05)
+    ? `<div class="plan-warning" style="margin-bottom:12px">${icon('clock', 14)} ${fmtHours(sched.unscheduled)} nog niet ingepland. Voeg toe met &plus; bij een dag, of herstel automatisch.</div>`
+    : '';
+
+  // In handmatige modus tonen we alle dagen vanaf vandaag (ook lege, om aan toe te voegen)
+  const shownDays = manual ? sched.days.filter(d => d.date >= today0) : daysWithWork;
+
   return `
+    ${editBar}
+    ${unschedBanner}
     ${renderWeekStrip(sched)}
     <div class="plan-schedule">
-      ${daysWithWork.map(d => {
+      ${shownDays.map(d => {
         const isToday = +d.date === +today0;
         const isPast = d.date < today0;
+        const useTimed = d.timed && d.timed.length && !manual;
         return `
           <div class="plan-schedule-day ${isToday ? 'today' : ''} ${isPast ? 'past' : ''}">
             <div class="plan-schedule-date">
               ${isToday ? '<span class="plan-today-badge">Vandaag</span>' : ''}
               ${formatDate(d.date)}
-              <span class="plan-schedule-total">${fmtHours(d.used)}</span>
+              <span class="plan-schedule-total">${d.used > 0 ? fmtHours(d.used) : ''}</span>
+              ${manual ? `<button class="schedule-add-btn" onclick="openAddToDayModal(${plan.id},'${d.key}')" title="Taak op deze dag">${icon('plus', 13)}</button>` : ''}
             </div>
             <div class="plan-schedule-items">
-              ${(d.timed && d.timed.length ? d.timed.map(a => {
+              ${d.assignments.length === 0 && manual ? '<div class="plan-schedule-empty">— vrij —</div>' : ''}
+              ${useTimed ? d.timed.map(a => {
                 const s = subjects[a.subject];
                 return `
                   <div class="plan-schedule-item">
@@ -2683,20 +2708,136 @@ function renderPlanScheduleView(plan, sched) {
                     <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
                     <span class="plan-schedule-item-title">${esc(a.title)}</span>
                   </div>`;
-              }) : d.assignments.map(a => {
+              }).join('') : d.assignments.map(a => {
                 const s = subjects[a.subject];
                 return `
                   <div class="plan-schedule-item">
                     <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
                     <span class="plan-schedule-item-title">${esc(a.title)}</span>
                     <span class="plan-schedule-item-hours">${fmtHours(a.hours)}</span>
+                    ${manual ? `
+                      <button class="schedule-item-btn" onclick="openMoveBlockModal(${plan.id},'${d.key}',${a.taskId},${a.hours})" title="Verplaatsen">&#8596;</button>
+                      <button class="schedule-item-btn delete" onclick="removeFromDay(${plan.id},'${d.key}',${a.taskId})" title="Van deze dag halen">${icons.x}</button>
+                    ` : ''}
                   </div>`;
-              })).join('')}
+              }).join('')}
             </div>
           </div>`;
       }).join('')}
     </div>
   `;
+}
+
+// --- Studieschema handmatig aanpassen ---
+function enterManualSchedule(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const sched = buildSchedule(p); // huidige automatische indeling als startpunt
+  const ms = {};
+  sched.days.forEach(d => d.assignments.forEach(a => {
+    if (!ms[d.key]) ms[d.key] = [];
+    const ex = ms[d.key].find(x => x.taskId === a.taskId);
+    if (ex) ex.hours += a.hours;
+    else ms[d.key].push({ taskId: a.taskId, hours: a.hours });
+  }));
+  p.manualSchedule = ms;
+  savePlans();
+  renderPage('planner');
+}
+
+function resetSchedule(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  if (!confirm('Terug naar het automatische schema? Je handmatige aanpassingen gaan verloren.')) return;
+  delete p.manualSchedule;
+  savePlans();
+  renderPage('planner');
+}
+
+function removeFromDay(planId, key, taskId) {
+  const p = getPlan(planId);
+  if (!p || !p.manualSchedule) return;
+  manualScheduleRemove(p, key, taskId, null);
+  savePlans();
+  renderPage('planner');
+}
+
+function openMoveBlockModal(planId, fromKey, taskId, hours) {
+  const p = getPlan(planId);
+  const t = p && p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  const s = subjects[t.subject];
+  const today0 = startOfDay(today);
+  const deadline = planDeadline(p);
+  let opts = '';
+  for (let d = new Date(today0); d <= deadline; d = addDays(d, 1)) {
+    const k = dateKey(d);
+    if (k === fromKey) continue;
+    opts += `<button class="move-day-btn" onclick="moveBlock(${planId},'${fromKey}','${k}',${taskId},${hours})">${formatDate(d)}</button>`;
+  }
+  openModal('Verplaatsen', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">
+      <span class="schedule-dot" style="background:${s ? s.color : '#ccc'};display:inline-block"></span>
+      <strong>${esc(t.title)}</strong> (${fmtHours(hours)}) verplaatsen naar:
+    </p>
+    <div class="move-day-list">${opts || '<p style="color:var(--gray-400)">Geen andere dagen beschikbaar.</p>'}</div>
+  `);
+}
+
+function moveBlock(planId, fromKey, toKey, taskId, hours) {
+  const p = getPlan(planId);
+  if (!p || !p.manualSchedule) return;
+  manualScheduleRemove(p, fromKey, taskId, hours);
+  manualScheduleAdd(p, toKey, taskId, hours);
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function openAddToDayModal(planId, key) {
+  const p = getPlan(planId);
+  if (!p) return;
+  // Toon per taak hoeveel er nog niet is ingepland
+  const planned = {};
+  Object.values(p.manualSchedule || {}).forEach(arr => arr.forEach(a => { planned[a.taskId] = (planned[a.taskId] || 0) + a.hours; }));
+  const open = p.tasks
+    .map(t => ({ t, left: Math.round((Math.max(0, (t.hours || 0) - Math.max(0, t.hoursDone || 0)) - (planned[t.id] || 0)) * 100) / 100 }))
+    .filter(x => x.left > 0.05);
+
+  const d = parseDateKey(key);
+  openModal('Taak toevoegen op ' + formatDate(d), `
+    ${open.length === 0
+      ? '<p style="color:var(--gray-500);font-size:0.9rem">Alle taakuren zijn al ingepland. Voeg eerst een taak toe of verhoog de uren van een taak.</p>'
+      : `<form onsubmit="addToDay(event,${planId},'${key}')">
+          <div class="form-group">
+            <label class="form-label">Taak</label>
+            <select class="form-select" id="addday-task" onchange="document.getElementById('addday-hours').max=this.selectedOptions[0].dataset.left;document.getElementById('addday-hours').value=Math.min(parseFloat(this.selectedOptions[0].dataset.left),parseFloat(document.getElementById('addday-hours').value)||1)">
+              ${open.map(x => {
+                const s = subjects[x.t.subject];
+                return `<option value="${x.t.id}" data-left="${x.left}">${s ? s.name + ' — ' : ''}${esc(x.t.title)} (${fmtHours(x.left)} over)</option>`;
+              }).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Hoeveel uur op deze dag?</label>
+            <input type="number" class="form-input" id="addday-hours" min="0.5" max="${open[0].left}" step="0.5" value="${Math.min(1, open[0].left)}" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Toevoegen</button>
+        </form>`}
+  `);
+}
+
+function addToDay(e, planId, key) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const taskId = parseInt(document.getElementById('addday-task').value);
+  const hours = Math.max(0.5, parseFloat(document.getElementById('addday-hours').value) || 0.5);
+  if (!taskId) return;
+  manualScheduleAdd(p, key, taskId, hours);
+  savePlans();
+  closeModal();
+  renderPage('planner');
 }
 
 // --- Per vak: stof opschrijven & zien wat er nog te doen is ---
