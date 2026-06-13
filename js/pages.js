@@ -2520,6 +2520,8 @@ function renderPlanDetail(plan) {
 
     ${renderExamSchedule(plan)}
 
+    ${renderSubjectOverview(plan)}
+
     <div class="plan-columns">
       <!-- Taken -->
       <div class="card">
@@ -2697,6 +2699,147 @@ function renderPlanScheduleView(plan, sched) {
   `;
 }
 
+// --- Per vak: stof opschrijven & zien wat er nog te doen is ---
+function subjectStats(plan, key) {
+  const tasks = plan.tasks.filter(t => t.subject === key);
+  const totalH = tasks.reduce((a, t) => a + Math.max(0, t.hours || 0), 0);
+  const doneH = tasks.reduce((a, t) => a + Math.min(t.hours || 0, Math.max(0, t.hoursDone || 0)), 0);
+  const remaining = tasks.filter(t => !(t.hoursDone >= t.hours)).length;
+  const pct = totalH > 0 ? Math.round((doneH / totalH) * 100) : 0;
+  const exam = (plan.exams || []).filter(e => e.subject === key).sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+  return { tasks, totalH, doneH, remaining, pct, exam };
+}
+
+function renderSubjectOverview(plan) {
+  const keys = [...new Set([...(plan.exams || []).map(e => e.subject), ...plan.tasks.map(t => t.subject)])]
+    .filter(k => subjects[k]);
+  if (keys.length === 0) return '';
+  // Sorteer op toetsdatum (vakken met toets eerst, op datum), dan op naam
+  keys.sort((a, b) => {
+    const ea = subjectStats(plan, a).exam, eb = subjectStats(plan, b).exam;
+    if (ea && eb) return new Date(ea.date) - new Date(eb.date);
+    if (ea) return -1;
+    if (eb) return 1;
+    return subjects[a].name.localeCompare(subjects[b].name, 'nl');
+  });
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${icon('book')} Per vak</div>
+        <span style="font-size:0.8rem;color:var(--gray-400)">klik een vak voor je stof</span>
+      </div>
+      <div class="subject-overview-grid">
+        ${keys.map(k => {
+          const s = subjects[k];
+          const st = subjectStats(plan, k);
+          const done = st.totalH > 0 && st.remaining === 0;
+          return `
+            <button class="subject-ov-card" onclick="openSubjectModal(${plan.id},'${k}')" style="border-left-color:${s.color}">
+              <div class="subject-ov-head">${s.icon} ${s.name}</div>
+              <div class="subject-ov-meta">${st.exam ? `${icon('fileText', 11)} toets ${formatDateShort(new Date(st.exam.date))}` : 'geen toetsdatum'}</div>
+              <div class="subject-ov-status ${done ? 'done' : ''}">
+                ${st.totalH === 0 ? 'nog geen stof' : done ? '✓ helemaal klaar' : `${st.remaining} te doen · ${fmtHours(st.totalH - st.doneH)}`}
+              </div>
+              <div class="plan-task-bar"><div class="plan-task-bar-fill" style="width:${st.pct}%;background:${s.color}"></div></div>
+            </button>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function openSubjectModal(planId, subjectKey) {
+  const p = getPlan(planId);
+  const s = subjects[subjectKey];
+  if (!p || !s) return;
+  const st = subjectStats(p, subjectKey);
+
+  openModal(`${s.icon} ${s.name}`, `
+    ${st.exam ? `<div class="subject-modal-exam">${icon('fileText', 14)} Toets op <strong>${formatDate(new Date(st.exam.date))}</strong> — ${getDueText(new Date(st.exam.date)).text}</div>` : ''}
+    ${st.totalH > 0 ? `
+      <div class="subject-modal-progress">
+        <div class="plan-task-bar"><div class="plan-task-bar-fill" style="width:${st.pct}%;background:${s.color}"></div></div>
+        <span>${fmtHours(st.doneH)} / ${fmtHours(st.totalH)} · ${st.pct}%</span>
+      </div>` : ''}
+
+    <div class="subject-stof-label">Je stof voor dit vak — wat moet je nog doen?</div>
+    <div class="subject-stof-list">
+      ${st.tasks.length === 0
+        ? '<p style="color:var(--gray-400);font-size:0.85rem;margin:4px 0 12px">Nog niks opgeschreven. Voeg hieronder toe wat je voor dit vak moet leren of maken.</p>'
+        : st.tasks.map(t => {
+            const done = t.hoursDone >= t.hours;
+            const dh = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
+            return `
+              <div class="stof-row ${done ? 'done' : ''}">
+                <button class="stof-check ${done ? 'on' : ''}" onclick="stofToggle(${planId},'${subjectKey}',${t.id})" title="${done ? 'Niet klaar' : 'Klaar'}">${icons.check}</button>
+                <div class="stof-info">
+                  <div class="stof-title ${done ? 'done' : ''}">${esc(t.title)}</div>
+                  <div class="stof-sub">${fmtHours(dh)} / ${fmtHours(t.hours)}</div>
+                </div>
+                ${!done ? `<button class="stof-mini" onclick="stofLog(${planId},'${subjectKey}',${t.id},0.5)" title="+30 min">+&frac12;u</button>
+                <button class="stof-mini" onclick="stofLog(${planId},'${subjectKey}',${t.id},1)" title="+1 uur">+1u</button>` : ''}
+                <button class="stof-mini delete" onclick="stofDelete(${planId},'${subjectKey}',${t.id})" title="Verwijderen">${icons.x}</button>
+              </div>`;
+          }).join('')}
+    </div>
+
+    <form onsubmit="addSubjectStof(event,${planId},'${subjectKey}')" class="subject-stof-add">
+      <input type="text" class="form-input" id="stof-title" placeholder="Bijv. Samenvatting H5 maken" required>
+      <input type="number" class="form-input" id="stof-hours" min="0.5" max="40" step="0.5" value="1" title="Geschatte uren">
+      <button type="submit" class="btn btn-primary">${icon('plus', 14)}</button>
+    </form>
+    <p class="form-hint">Elke regel komt als taak in je planning en wordt automatisch ingepland in je studieschema.</p>
+  `);
+}
+
+function addSubjectStof(e, planId, subjectKey) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const title = document.getElementById('stof-title').value.trim();
+  const hours = Math.max(0.5, parseFloat(document.getElementById('stof-hours').value) || 1);
+  if (!title) return;
+  const id = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
+  p.tasks.push({ id, subject: subjectKey, title, hours, hoursDone: 0, done: false });
+  savePlans();
+  renderPage('planner');
+  openSubjectModal(planId, subjectKey);
+}
+
+function stofLog(planId, subjectKey, taskId, h) {
+  const p = getPlan(planId);
+  const t = p && p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  t.hoursDone = Math.min(t.hours, Math.max(0, (t.hoursDone || 0) + h));
+  t.done = t.hoursDone >= t.hours;
+  if (h > 0) updateStreak();
+  savePlans();
+  renderPage('planner');
+  openSubjectModal(planId, subjectKey);
+}
+
+function stofToggle(planId, subjectKey, taskId) {
+  const p = getPlan(planId);
+  const t = p && p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  t.done = !(t.hoursDone >= t.hours);
+  t.hoursDone = t.done ? t.hours : 0;
+  if (t.done) updateStreak();
+  savePlans();
+  renderPage('planner');
+  openSubjectModal(planId, subjectKey);
+}
+
+function stofDelete(planId, subjectKey, taskId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  p.tasks = p.tasks.filter(t => t.id !== taskId);
+  savePlans();
+  renderPage('planner');
+  openSubjectModal(planId, subjectKey);
+}
+
 // --- Examrooster ---
 function renderExamSchedule(plan) {
   const exams = [...(plan.exams || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -2722,6 +2865,9 @@ function renderExamSchedule(plan) {
                   <div class="exam-row-sub">${s ? s.name : ''} · ${formatDate(new Date(ex.date))}${ex.time ? ` · ${ex.time}` : ''}</div>
                 </div>
                 <span class="todo-due ${due.urgent ? 'urgent' : ''}">${due.text}</span>
+                <button class="lesson-action-btn" onclick="openEditExamModal(${plan.id},${ex.id})" title="Bewerken">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                </button>
                 <button class="lesson-action-btn delete" onclick="deleteExam(${plan.id},${ex.id})" title="Verwijderen">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
                 </button>
@@ -2775,6 +2921,55 @@ function addExam(e, planId) {
     date: new Date(dateVal).toISOString(),
     time: document.getElementById('exam-time').value,
   });
+  syncPlanExamDate(p);
+  savePlans();
+  closeModal();
+  renderPage('planner');
+}
+
+function openEditExamModal(planId, examId) {
+  const p = getPlan(planId);
+  const ex = p && (p.exams || []).find(x => x.id === examId);
+  if (!ex) return;
+  const isExam = p.type === 'examen';
+  const opts = mySubjectEntries().map(([k, s]) => `<option value="${k}" ${k === ex.subject ? 'selected' : ''}>${s.name}</option>`).join('');
+  openModal((isExam ? 'Examen' : 'Toets') + ' bewerken', `
+    <form onsubmit="editExam(event,${planId},${examId})">
+      <div class="form-group">
+        <label class="form-label">Vak</label>
+        <select class="form-select" id="edit-exam-subject" required>
+          <option value="">Kies een vak...</option>${opts}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Titel (optioneel)</label>
+        <input type="text" class="form-input" id="edit-exam-title" value="${esc(ex.title || '')}" placeholder="Bijv. Proefwerk H5">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Datum</label>
+        <input type="date" class="form-input" id="edit-exam-date" value="${dateKey(new Date(ex.date))}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tijd (optioneel)</label>
+        <input type="time" class="form-input" id="edit-exam-time" value="${ex.time || ''}">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Opslaan</button>
+    </form>
+  `);
+}
+
+function editExam(e, planId, examId) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  const ex = p && (p.exams || []).find(x => x.id === examId);
+  if (!ex) return;
+  const subject = document.getElementById('edit-exam-subject').value;
+  const dateVal = document.getElementById('edit-exam-date').value;
+  if (!subject || !dateVal) return;
+  ex.subject = subject;
+  ex.title = document.getElementById('edit-exam-title').value.trim();
+  ex.date = new Date(dateVal).toISOString();
+  ex.time = document.getElementById('edit-exam-time').value;
   syncPlanExamDate(p);
   savePlans();
   closeModal();
