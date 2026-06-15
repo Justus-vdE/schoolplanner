@@ -102,20 +102,37 @@ const subjectCategories = {
 const categoryOrder = ['Talen', 'Exacte vakken', 'Mens & maatschappij', 'Kunst & overig'];
 function subjectCategory(key) { return subjectCategories[key] || 'Kunst & overig'; }
 
-// --- Vakkenpakketten (profielen) — snelle voorselectie ---
+// --- Vakkenpakketten (profielen) ---
 // Nederlands en Engels horen er altijd bij (kernvakken).
 const profileCore = ['nederlands', 'engels'];
+// Vakken die in elk profiel gekozen kunnen worden (talen, kunst, algemeen)
+const profileUniversal = [
+  'frans', 'duits', 'spaans', 'latijn', 'grieks',
+  'geschiedenis', 'aardrijkskunde', 'maatschappijleer', 'maatschappijwetenschappen',
+  'filosofie', 'godsdienst', 'informatica', 'ckv', 'kunst', 'muziek', 'lo',
+];
 const subjectProfiles = {
-  nt: { name: 'Natuur & Techniek',      icon: '🔬', subjects: ['wiskundeb', 'natuurkunde', 'scheikunde'] },
-  ng: { name: 'Natuur & Gezondheid',    icon: '🧬', subjects: ['wiskundea', 'biologie', 'scheikunde'] },
-  em: { name: 'Economie & Maatschappij',icon: '📊', subjects: ['wiskundea', 'economie', 'geschiedenis'] },
-  cm: { name: 'Cultuur & Maatschappij', icon: '🎭', subjects: ['wiskundea', 'geschiedenis', 'aardrijkskunde', 'filosofie'] },
+  nt: { name: 'Natuur & Techniek',       icon: '🔬', mandatory: ['wiskundeb', 'natuurkunde', 'scheikunde'], allow: ['wiskunded', 'biologie', 'nlt'] },
+  ng: { name: 'Natuur & Gezondheid',     icon: '🧬', mandatory: ['wiskundea', 'biologie', 'scheikunde'],    allow: ['wiskundeb', 'wiskunded', 'natuurkunde', 'nlt'] },
+  em: { name: 'Economie & Maatschappij', icon: '📊', mandatory: ['wiskundea', 'economie', 'geschiedenis'],   allow: ['wiskundeb', 'bedrijfseconomie', 'natuurkunde'] },
+  cm: { name: 'Cultuur & Maatschappij',  icon: '🎭', mandatory: ['wiskundea', 'geschiedenis'],               allow: ['wiskundec', 'economie', 'bedrijfseconomie'] },
 };
+
+// Vakken die je in dit profiel kúnt kiezen (verplicht + keuze + universeel)
+function profileAllowed(profileKey, level) {
+  const prof = subjectProfiles[profileKey];
+  const avail = new Set(subjectsForLevel(level));
+  if (!prof) return [...avail];
+  return [...new Set([...profileCore, ...prof.mandatory, ...prof.allow, ...profileUniversal])]
+    .filter(k => avail.has(k));
+}
+
+// Vakken die automatisch aangevinkt worden bij dit profiel (kern + verplicht)
 function profileSubjects(profileKey, level) {
   const prof = subjectProfiles[profileKey];
   if (!prof) return [];
   const avail = new Set(subjectsForLevel(level));
-  return [...new Set([...profileCore, ...prof.subjects])].filter(k => avail.has(k));
+  return [...new Set([...profileCore, ...prof.mandatory])].filter(k => avail.has(k));
 }
 
 // De vakken die JIJ hebt gekozen (valt terug op een standaardselectie).

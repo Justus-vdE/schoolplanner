@@ -2124,11 +2124,12 @@ function importBackup(input) {
 let wizardStep = 1;
 let wizardMode = 'fresh'; // 'fresh' = nieuwe gebruiker, 'tour' = rondleiding vanuit Instellingen
 const WIZARD_TOTAL = 10;
-const wizardState = { level: 'havo', subjects: new Set(), name: '' };
+const wizardState = { level: 'havo', subjects: new Set(), name: '', profile: null };
 
 function showOnboarding(mode) {
   wizardMode = mode || 'fresh';
   wizardStep = 1;
+  wizardState.profile = null;
   if (wizardMode === 'tour') {
     // Vooraf invullen met je huidige instellingen
     wizardState.level = appSettings.examLevel || 'havo';
@@ -2205,11 +2206,12 @@ function renderOnboarding() {
       ${showProfiles ? `
         <div class="profile-chips">
           ${Object.entries(subjectProfiles).map(([k, p]) => `
-            <button type="button" class="profile-chip" onclick="wizardSetProfile('${k}')">${p.icon} ${p.name}</button>
+            <button type="button" class="profile-chip ${wizardState.profile === k ? 'active' : ''}" onclick="wizardSetProfile('${k}')">${p.icon} ${p.name}</button>
           `).join('')}
+          <button type="button" class="profile-chip ${!wizardState.profile ? 'active' : ''}" onclick="wizardClearProfile()">Alle vakken</button>
         </div>` : ''}
       <div class="onb-subjects">
-        ${groupedSubjectPicker(wizardState.level, [...wizardState.subjects], k => `wizardToggleSubject('${k}')`)}
+        ${groupedSubjectPicker(wizardState.level, [...wizardState.subjects], k => `wizardToggleSubject('${k}')`, wizardState.profile ? profileAllowed(wizardState.profile, wizardState.level) : null)}
       </div>
       <button class="btn btn-primary onb-next" onclick="wizardNext()" ${wizardState.subjects.size === 0 ? 'disabled' : ''}>Volgende &rarr;</button>
       <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
@@ -2285,6 +2287,7 @@ function renderOnboarding() {
 
 function wizardSetLevel(level) {
   wizardState.level = level;
+  wizardState.profile = null; // profiel-filter resetten bij niveauwissel
   // Vakken die op het nieuwe niveau niet bestaan eruit halen
   const valid = new Set(subjectsForLevel(level));
   wizardState.subjects = new Set([...wizardState.subjects].filter(k => valid.has(k)));
@@ -2298,15 +2301,24 @@ function wizardToggleSubject(key) {
 }
 
 function wizardSetProfile(key) {
+  wizardState.profile = key;
   wizardState.subjects = new Set(profileSubjects(key, wizardState.level));
   renderOnboarding();
 }
 
+function wizardClearProfile() {
+  wizardState.profile = null;
+  renderOnboarding();
+}
+
 // Gedeelde gegroepeerde vakkenkiezer (gebruikt in wizard én instellingen)
-function groupedSubjectPicker(level, selectedKeys, onclickFor) {
+// allowedKeys (optioneel): toon alleen deze vakken (bij een gekozen profiel)
+function groupedSubjectPicker(level, selectedKeys, onclickFor, allowedKeys) {
   const sel = new Set(selectedKeys);
+  const allow = allowedKeys ? new Set(allowedKeys) : null;
   const groups = {};
   subjectsForLevel(level).forEach(k => {
+    if (allow && !allow.has(k)) return;
     const c = subjectCategory(k);
     (groups[c] = groups[c] || []).push(k);
   });
@@ -2355,22 +2367,33 @@ function confirmClearDemo() {
 // --- Vakken & niveau ---
 function renderSubjectPicker() {
   const level = appSettings.examLevel || 'vwo';
+  const active = appSettings.profile || null;
   const profiles = level !== 'vmbo'
     ? `<div class="profile-chips" style="margin-bottom:10px">
-        ${Object.entries(subjectProfiles).map(([k, p]) => `<button type="button" class="profile-chip" onclick="setMyProfile('${k}')">${p.icon} ${p.name}</button>`).join('')}
+        ${Object.entries(subjectProfiles).map(([k, p]) => `<button type="button" class="profile-chip ${active === k ? 'active' : ''}" onclick="setMyProfile('${k}')">${p.icon} ${p.name}</button>`).join('')}
+        <button type="button" class="profile-chip ${!active ? 'active' : ''}" onclick="clearMyProfile()">Alle vakken</button>
        </div>`
     : '';
-  return profiles + groupedSubjectPicker(level, mySubjectKeys(), k => `toggleMySubject('${k}')`);
+  const allowed = active ? profileAllowed(active, level) : null;
+  return profiles + groupedSubjectPicker(level, mySubjectKeys(), k => `toggleMySubject('${k}')`, allowed);
 }
 
 function setMyProfile(key) {
+  appSettings.profile = key;
   appSettings.mySubjects = profileSubjects(key, appSettings.examLevel || 'vwo');
+  saveSettings();
+  renderPage('instellingen');
+}
+
+function clearMyProfile() {
+  appSettings.profile = null;
   saveSettings();
   renderPage('instellingen');
 }
 
 function updateExamLevel(level) {
   appSettings.examLevel = level;
+  appSettings.profile = null; // profiel-filter resetten bij niveauwissel
   // Behoud alleen gekozen vakken die op het nieuwe niveau bestaan
   const valid = new Set(subjectsForLevel(level));
   appSettings.mySubjects = mySubjectKeys().filter(k => valid.has(k));
