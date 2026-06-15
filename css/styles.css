@@ -3204,3 +3204,70 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
 }
 .prio-check input { width: 16px; height: 16px; }
+
+/* ============================================================ */
+/* --- Mobiel-vriendelijk (alleen smalle schermen; desktop ongewijzigd) --- */
+/* ============================================================ */
+@media (max-width: 768px) {
+  /* iOS zoomt in op velden < 16px bij focus — voorkom dat */
+  .form-input, .form-select, textarea.form-input,
+  .availability-input, .paste-preview-row .form-input,
+  .paste-preview-row .form-select {
+    font-size: 16px;
+  }
+
+  /* Modals breder en hoger op kleine schermen */
+  .modal-overlay { padding: 10px; align-items: flex-end; }
+  .modal { max-width: 100%; max-height: 94vh; border-radius: 18px 18px 0 0; }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal-header { padding: 18px 18px 0; }
+  .modal-body { padding: 16px 18px 20px; }
+
+  /* Grotere tikvlakken voor knopjes */
+  .lesson-action-btn { width: 32px; height: 32px; }
+  .btn-sm { padding: 8px 12px; }
+
+  /* Planner: statistieken en per-vak onder elkaar/2-koloms */
+  .plan-stats { grid-template-columns: repeat(2, 1fr); }
+  .plan-columns { grid-template-columns: 1fr; }
+  .subject-overview-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Taakregel: knoppen netjes laten afbreken i.p.v. overlopen */
+  .plan-task-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .plan-schedule-item { flex-wrap: wrap; }
+
+  /* Bewerk-balk van het schema onder elkaar */
+  .schedule-editbar { flex-direction: column; align-items: stretch; }
+  .schedule-editbar .btn { justify-content: center; }
+
+  /* Uitgebreid cijferoverzicht: horizontaal scrollen i.p.v. samenpersen */
+  .grades-detail-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .grades-detail-row { min-width: 540px; }
+
+  /* Plak-cijfers preview: compactere kolommen */
+  .paste-preview-row, .paste-preview-head { grid-template-columns: 96px 1fr 46px 54px 26px; gap: 4px; }
+
+  /* Page-header knoppen mooi vullen */
+  .page-header .btn-sm { flex: 1; justify-content: center; }
+
+  /* Onboarding iets compacter */
+  .onb-card { padding: 26px 20px; }
+  .onb-subjects { max-height: 240px; }
+}
+
+@media (max-width: 480px) {
+  .subject-overview-grid { grid-template-columns: 1fr; }
+  .plan-stats { grid-template-columns: 1fr 1fr; }
+  .onb-levels { gap: 6px; }
+  .onb-level { padding: 14px 6px; font-size: 0.95rem; }
+
+  /* Stof toevoegen: uren-veld en knop niet te krap */
+  .subject-stof-add { flex-wrap: wrap; }
+  .subject-stof-add #stof-title { flex: 1 1 100%; }
+
+  /* Weekbalk blijft leesbaar */
+  .week-strip { gap: 3px; }
+  .week-strip-cell { padding: 6px 2px; }
+  .week-strip-day { font-size: 0.6rem; }
+  .week-strip-hours { font-size: 0.8rem; }
+}
