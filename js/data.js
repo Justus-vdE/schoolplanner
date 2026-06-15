@@ -99,8 +99,32 @@ const subjectCategories = {
   maatschappijleer: 'Mens & maatschappij', maatschappijwetenschappen: 'Mens & maatschappij', filosofie: 'Mens & maatschappij', godsdienst: 'Mens & maatschappij',
   ckv: 'Kunst & overig', kunst: 'Kunst & overig', muziek: 'Kunst & overig', techniek: 'Kunst & overig', lo: 'Kunst & overig',
 };
-const categoryOrder = ['Talen', 'Exacte vakken', 'Mens & maatschappij', 'Kunst & overig'];
-function subjectCategory(key) { return subjectCategories[key] || 'Kunst & overig'; }
+const categoryOrder = ['Talen', 'Exacte vakken', 'Mens & maatschappij', 'Kunst & overig', 'Eigen vakken'];
+function subjectCategory(key) {
+  if (subjects[key] && subjects[key].custom) return 'Eigen vakken';
+  return subjectCategories[key] || 'Kunst & overig';
+}
+
+// --- Eigen vakken (zelf toegevoegd) ---
+function mergeCustomSubjects() {
+  if (appSettings && appSettings.customSubjects) Object.assign(subjects, appSettings.customSubjects);
+}
+
+function addCustomSubject(name, icon) {
+  if (!appSettings.customSubjects) appSettings.customSubjects = {};
+  const palette = ['#0EA5E9', '#8B5CF6', '#EF4444', '#F59E0B', '#10B981', '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#84CC16'];
+  const color = palette[Object.keys(appSettings.customSubjects).length % palette.length];
+  const key = 'custom_' + Date.now().toString(36);
+  const entry = {
+    name: String(name).slice(0, 30), color, light: color + '22',
+    icon: icon || '📚', teacher: '', custom: true,
+    levels: ['vmbo', 'havo', 'vwo', 'gymnasium'],
+  };
+  appSettings.customSubjects[key] = entry;
+  subjects[key] = entry;
+  saveSettings();
+  return key;
+}
 
 // --- Vakkenpakketten (profielen) ---
 // Nederlands en Engels horen er altijd bij (kernvakken).
@@ -122,8 +146,9 @@ const subjectProfiles = {
 function profileAllowed(profileKey, level) {
   const prof = subjectProfiles[profileKey];
   const avail = new Set(subjectsForLevel(level));
+  const customKeys = Object.keys(appSettings.customSubjects || {});
   if (!prof) return [...avail];
-  return [...new Set([...profileCore, ...prof.mandatory, ...prof.allow, ...profileUniversal])]
+  return [...new Set([...profileCore, ...prof.mandatory, ...prof.allow, ...profileUniversal, ...customKeys])]
     .filter(k => avail.has(k));
 }
 
@@ -818,6 +843,7 @@ function loadSettings() {
   if (saved) {
     try { appSettings = { ...defaultSettings, ...JSON.parse(saved) }; } catch(e) {}
   }
+  mergeCustomSubjects();
 }
 
 function saveSettings() {

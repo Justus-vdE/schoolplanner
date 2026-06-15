@@ -2212,6 +2212,7 @@ function renderOnboarding() {
         </div>` : ''}
       <div class="onb-subjects">
         ${groupedSubjectPicker(wizardState.level, [...wizardState.subjects], k => `wizardToggleSubject('${k}')`, wizardState.profile ? profileAllowed(wizardState.profile, wizardState.level) : null)}
+        <button type="button" class="add-custom-subject" onclick="addCustomSubjectFlow('wizard')">${icon('plus', 14)} Vak staat er niet bij? Voeg toe</button>
       </div>
       <button class="btn btn-primary onb-next" onclick="wizardNext()" ${wizardState.subjects.size === 0 ? 'disabled' : ''}>Volgende &rarr;</button>
       <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
@@ -2375,7 +2376,28 @@ function renderSubjectPicker() {
        </div>`
     : '';
   const allowed = active ? profileAllowed(active, level) : null;
-  return profiles + groupedSubjectPicker(level, mySubjectKeys(), k => `toggleMySubject('${k}')`, allowed);
+  return profiles
+    + groupedSubjectPicker(level, mySubjectKeys(), k => `toggleMySubject('${k}')`, allowed)
+    + `<button type="button" class="add-custom-subject" onclick="addCustomSubjectFlow('settings')">${icon('plus', 14)} Vak staat er niet bij? Voeg toe</button>`;
+}
+
+// Eigen vak toevoegen (werkt in wizard én instellingen; prompt voorkomt
+// gedoe met vensters bovenop de wizard)
+function addCustomSubjectFlow(context) {
+  const name = (prompt('Naam van je eigen vak:') || '').trim();
+  if (!name) return;
+  const emoji = (prompt('Een emoji-icoon? (mag leeg)', '📚') || '📚').trim() || '📚';
+  const key = addCustomSubject(name, emoji);
+  if (context === 'wizard') {
+    wizardState.subjects.add(key);
+    renderOnboarding();
+  } else {
+    const set = new Set(mySubjectKeys());
+    set.add(key);
+    appSettings.mySubjects = [...set];
+    saveSettings();
+    renderPage('instellingen');
+  }
 }
 
 function setMyProfile(key) {
