@@ -3188,3 +3188,19 @@ a { color: inherit; text-decoration: none; }
   transition: var(--transition);
 }
 .move-day-btn:hover { border-color: var(--accent); background: var(--accent-light); color: var(--accent-hover); }
+
+/* --- Taak-prioriteit "eerder doen" --- */
+.prio-star { color: #F59E0B; }
+.prio-btn { font-size: 0.95rem; line-height: 1; color: var(--gray-400); }
+.prio-btn.on { color: #F59E0B; }
+.prio-btn:hover { color: #F59E0B; }
+.prio-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 4px;
+  font-size: 0.88rem;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+.prio-check input { width: 16px; height: 16px; }

@@ -970,7 +970,7 @@ function buildSchedule(plan) {
       if (need - planned > 0.001) unscheduled += need - planned;
     });
   } else {
-    // Automatisch: resterende uren per taak (op deadline gesorteerd), afwisselend verdeeld
+    // Automatisch: resterende uren per taak (op deadline gesorteerd)
     const items = plan.tasks
       .map(t => ({
         task: t,
@@ -980,9 +980,33 @@ function buildSchedule(plan) {
       .filter(i => i.rem > 0.0001)
       .sort((a, b) => a.due - b.due);
 
+    // Eén assignment per taak per dag (uren optellen)
+    const place = (day, it, hours) => {
+      const ex = day.assignments.find(a => a.taskId === it.task.id);
+      if (ex) ex.hours += hours;
+      else day.assignments.push({ taskId: it.task.id, subject: it.task.subject, title: it.task.title, hours });
+      day.used += hours;
+      it.rem -= hours;
+    };
+
+    // Fase 1: taken met 'eerder doen' worden vooraan ingepland (vroegste dagen vol)
+    const prio = items.filter(i => i.task.priority);
+    if (prio.length) {
+      for (const day of days) {
+        let free = day.capacity - day.used;
+        for (const it of prio) {
+          if (free <= 0.0001) break;
+          if (it.rem <= 0.0001 || it.due < day.date) continue;
+          const chunk = Math.min(it.rem, free);
+          place(day, it, chunk);
+          free -= chunk;
+        }
+      }
+    }
+
+    // Fase 2: de rest afwisselend (round-robin) over de overgebleven tijd
     for (const day of days) {
-      let free = day.capacity;
-      const byTask = new Map();
+      let free = day.capacity - day.used;
       let guard = 0;
       while (free > 0.0001 && guard++ < 500) {
         const eligible = items.filter(i => i.rem > 0.0001 && i.due >= day.date);
@@ -992,18 +1016,12 @@ function buildSchedule(plan) {
           if (free <= 0.0001) break;
           const chunk = Math.min(1, it.rem, free);
           if (chunk <= 0.0001) continue;
-          byTask.set(it.task.id, (byTask.get(it.task.id) || 0) + chunk);
-          it.rem -= chunk;
+          place(day, it, chunk);
           free -= chunk;
           allocated = true;
         }
         if (!allocated) break;
       }
-      items.forEach(it => {
-        const h = byTask.get(it.task.id);
-        if (h) day.assignments.push({ taskId: it.task.id, subject: it.task.subject, title: it.task.title, hours: h });
-      });
-      day.used = day.capacity - free;
     }
     // Wat nergens meer past (vóór de eigen toets/deadline) telt als tekort
     overflow = items.reduce((s, i) => s + i.rem, 0);

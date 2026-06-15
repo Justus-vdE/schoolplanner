@@ -2575,10 +2575,11 @@ function renderTaskRow(plan, t) {
       <div class="plan-task-top">
         <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
         <div class="plan-task-info">
-          <div class="plan-task-title ${isDone ? 'done' : ''}">${esc(t.title)}</div>
+          <div class="plan-task-title ${isDone ? 'done' : ''}">${t.priority ? '<span class="prio-star" title="Eerder doen">★</span> ' : ''}${esc(t.title)}</div>
           <div class="plan-task-sub">${s ? s.name : 'Algemeen'} · ${fmtHours(done)} / ${fmtHours(t.hours)}</div>
         </div>
         <div class="plan-task-actions">
+          <button class="lesson-action-btn prio-btn ${t.priority ? 'on' : ''}" onclick="toggleTaskPriority(${plan.id},${t.id})" title="${t.priority ? 'Niet meer eerder doen' : 'Eerder doen'}">${t.priority ? '★' : '☆'}</button>
           ${!isDone ? `<button class="btn btn-outline btn-sm plan-log-btn" onclick="openLogHoursModal(${plan.id},${t.id})">${icon('clock', 13)} Uren loggen</button>` : ''}
           <button class="lesson-action-btn" onclick="openEditTaskModal(${plan.id},${t.id})" title="Bewerken">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -3358,6 +3359,7 @@ function openAddTaskModal(planId) {
         <label class="form-label">Geschatte tijd (uren)</label>
         <input type="number" class="form-input" id="task-hours" min="0.5" max="40" step="0.5" value="2" required>
       </div>
+      <label class="prio-check"><input type="checkbox" id="task-prio"> ★ Eerder doen (vooraan in je schema)</label>
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Toevoegen</button>
     </form>
   `);
@@ -3427,9 +3429,19 @@ function addTask(e, planId) {
   const hours = Math.max(0, parseFloat(document.getElementById('task-hours').value) || 0);
   if (!subject || !title || !hours) return;
   const id = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
-  p.tasks.push({ id, subject, title, hours, hoursDone: 0, done: false });
+  const priority = !!(document.getElementById('task-prio') && document.getElementById('task-prio').checked);
+  p.tasks.push({ id, subject, title, hours, hoursDone: 0, done: false, priority });
   savePlans();
   closeModal();
+  renderPage('planner');
+}
+
+function toggleTaskPriority(planId, taskId) {
+  const p = getPlan(planId);
+  const t = p && p.tasks.find(x => x.id === taskId);
+  if (!t) return;
+  t.priority = !t.priority;
+  savePlans();
   renderPage('planner');
 }
 
@@ -3457,6 +3469,7 @@ function openEditTaskModal(planId, taskId) {
         <label class="form-label">Al gedaan (uren)</label>
         <input type="number" class="form-input" id="edit-task-done" min="0" max="40" step="0.25" value="${Math.max(0, t.hoursDone || 0)}">
       </div>
+      <label class="prio-check"><input type="checkbox" id="edit-task-prio" ${t.priority ? 'checked' : ''}> ★ Eerder doen (vooraan in je schema)</label>
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Opslaan</button>
     </form>
   `);
@@ -3474,6 +3487,7 @@ function editTask(e, planId, taskId) {
   t.hours = isNaN(hours) ? t.hours : Math.min(40, Math.max(0.5, hours));
   t.hoursDone = isNaN(done) ? (t.hoursDone || 0) : Math.min(t.hours, Math.max(0, done));
   t.done = t.hoursDone >= t.hours;
+  t.priority = !!document.getElementById('edit-task-prio').checked;
   savePlans();
   closeModal();
   renderPage('planner');
