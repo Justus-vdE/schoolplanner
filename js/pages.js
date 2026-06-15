@@ -2658,6 +2658,23 @@ function renderWeekStrip(sched) {
   return `<div class="week-strip">${cells.join('')}</div>`;
 }
 
+// Gekleurd vaklabel voor een schema-item (duidelijker dan alleen een bolletje)
+function scheduleSubjectTag(s) {
+  if (!s) return '<span class="sched-tag" style="background:var(--gray-100);color:var(--gray-500)">Overig</span>';
+  return `<span class="sched-tag" style="background:${s.light};color:${s.color}">${s.icon} ${s.name}</span>`;
+}
+
+// Haalt de dubbele vaknaam ("... — Wiskunde B") uit de titel als die er al is
+function scheduleItemLabel(a) {
+  const s = subjects[a.subject];
+  let title = a.title || '';
+  if (s) {
+    const suffix = '— ' + s.name;
+    if (title.endsWith(suffix)) title = title.slice(0, -suffix.length).trim();
+  }
+  return { s, title: title || (s ? s.name : 'Taak') };
+}
+
 function renderPlanScheduleView(plan, sched) {
   const today0 = startOfDay(today);
   const manual = sched.manual;
@@ -2704,19 +2721,19 @@ function renderPlanScheduleView(plan, sched) {
             <div class="plan-schedule-items">
               ${d.assignments.length === 0 && manual ? '<div class="plan-schedule-empty">— vrij —</div>' : ''}
               ${useTimed ? d.timed.map(a => {
-                const s = subjects[a.subject];
+                const it = scheduleItemLabel(a);
                 return `
-                  <div class="plan-schedule-item">
+                  <div class="plan-schedule-item" style="border-left-color:${it.s ? it.s.color : 'var(--gray-300)'}">
                     <span class="plan-schedule-item-time">${a.start}–${a.end}</span>
-                    <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
-                    <span class="plan-schedule-item-title">${esc(a.title)}</span>
+                    ${scheduleSubjectTag(it.s)}
+                    <span class="plan-schedule-item-title">${esc(it.title)}</span>
                   </div>`;
               }).join('') : d.assignments.map(a => {
-                const s = subjects[a.subject];
+                const it = scheduleItemLabel(a);
                 return `
-                  <div class="plan-schedule-item">
-                    <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
-                    <span class="plan-schedule-item-title">${esc(a.title)}</span>
+                  <div class="plan-schedule-item" style="border-left-color:${it.s ? it.s.color : 'var(--gray-300)'}">
+                    ${scheduleSubjectTag(it.s)}
+                    <span class="plan-schedule-item-title">${esc(it.title)}</span>
                     <span class="plan-schedule-item-hours">${fmtHours(a.hours)}</span>
                     ${manual ? `
                       <button class="schedule-item-btn" onclick="openMoveBlockModal(${plan.id},'${d.key}',${a.taskId},${a.hours})" title="Verplaatsen">&#8596;</button>
