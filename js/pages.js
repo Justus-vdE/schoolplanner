@@ -2136,7 +2136,7 @@ function showOnboarding(mode) {
     wizardState.name = appSettings.userName || '';
   } else {
     wizardState.level = 'havo';
-    wizardState.subjects = new Set();
+    wizardState.subjects = new Set(['nederlands', 'engels']); // kernvakken standaard aan
     wizardState.name = '';
   }
   let el = document.getElementById('onboarding');
@@ -2197,21 +2197,19 @@ function renderOnboarding() {
       <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
     `;
   } else if (wizardStep === 3) {
-    const keys = subjectsForLevel(wizardState.level).sort((a, b) => subjects[a].name.localeCompare(subjects[b].name, 'nl'));
+    const showProfiles = wizardState.level !== 'vmbo';
     body = `
       <div class="onb-icon">&#128218;</div>
       <h2>Welke vakken heb jij?</h2>
-      <p>Vink je vakkenpakket aan (${wizardState.subjects.size} gekozen) — aanpassen kan later altijd bij Instellingen.</p>
-      <div class="subject-picker onb-subjects">
-        ${keys.map(k => {
-          const s = subjects[k];
-          const on = wizardState.subjects.has(k);
-          return `<button type="button" class="subject-pick ${on ? 'on' : ''}" onclick="wizardToggleSubject('${k}')">
-            <span class="subject-pick-icon">${s.icon}</span>
-            <span class="subject-pick-name">${s.name}</span>
-            ${on ? `<span class="subject-pick-check">${icons.check}</span>` : ''}
-          </button>`;
-        }).join('')}
+      <p>${showProfiles ? 'Kies je profiel voor een snelle start, of vink zelf aan.' : 'Vink je vakken aan.'} Nederlands en Engels staan al aan. (${wizardState.subjects.size} gekozen)</p>
+      ${showProfiles ? `
+        <div class="profile-chips">
+          ${Object.entries(subjectProfiles).map(([k, p]) => `
+            <button type="button" class="profile-chip" onclick="wizardSetProfile('${k}')">${p.icon} ${p.name}</button>
+          `).join('')}
+        </div>` : ''}
+      <div class="onb-subjects">
+        ${groupedSubjectPicker(wizardState.level, [...wizardState.subjects], k => `wizardToggleSubject('${k}')`)}
       </div>
       <button class="btn btn-primary onb-next" onclick="wizardNext()" ${wizardState.subjects.size === 0 ? 'disabled' : ''}>Volgende &rarr;</button>
       <button class="onb-skip" onclick="wizardBack()">&larr; Terug</button>
@@ -2299,6 +2297,36 @@ function wizardToggleSubject(key) {
   renderOnboarding();
 }
 
+function wizardSetProfile(key) {
+  wizardState.subjects = new Set(profileSubjects(key, wizardState.level));
+  renderOnboarding();
+}
+
+// Gedeelde gegroepeerde vakkenkiezer (gebruikt in wizard én instellingen)
+function groupedSubjectPicker(level, selectedKeys, onclickFor) {
+  const sel = new Set(selectedKeys);
+  const groups = {};
+  subjectsForLevel(level).forEach(k => {
+    const c = subjectCategory(k);
+    (groups[c] = groups[c] || []).push(k);
+  });
+  return categoryOrder.filter(c => groups[c]).map(c => `
+    <div class="subj-group">
+      <div class="subj-group-title">${c}</div>
+      <div class="subject-picker">
+        ${groups[c].sort((a, b) => subjects[a].name.localeCompare(subjects[b].name, 'nl')).map(k => {
+          const s = subjects[k];
+          const on = sel.has(k);
+          return `<button type="button" class="subject-pick ${on ? 'on' : ''}" onclick="${onclickFor(k)}">
+            <span class="subject-pick-icon">${s.icon}</span>
+            <span class="subject-pick-name">${s.name}</span>
+            ${on ? `<span class="subject-pick-check">${icons.check}</span>` : ''}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+}
+
 function wizardNext() { wizardStep++; renderOnboarding(); }
 function wizardBack() { wizardStep--; renderOnboarding(); }
 
@@ -2327,18 +2355,18 @@ function confirmClearDemo() {
 // --- Vakken & niveau ---
 function renderSubjectPicker() {
   const level = appSettings.examLevel || 'vwo';
-  const mine = new Set(mySubjectKeys());
-  const keys = subjectsForLevel(level).sort((a, b) => subjects[a].name.localeCompare(subjects[b].name, 'nl'));
-  return keys.map(k => {
-    const s = subjects[k];
-    const on = mine.has(k);
-    return `
-      <button type="button" class="subject-pick ${on ? 'on' : ''}" onclick="toggleMySubject('${k}')">
-        <span class="subject-pick-icon">${s.icon}</span>
-        <span class="subject-pick-name">${s.name}</span>
-        ${on ? `<span class="subject-pick-check">${icons.check}</span>` : ''}
-      </button>`;
-  }).join('');
+  const profiles = level !== 'vmbo'
+    ? `<div class="profile-chips" style="margin-bottom:10px">
+        ${Object.entries(subjectProfiles).map(([k, p]) => `<button type="button" class="profile-chip" onclick="setMyProfile('${k}')">${p.icon} ${p.name}</button>`).join('')}
+       </div>`
+    : '';
+  return profiles + groupedSubjectPicker(level, mySubjectKeys(), k => `toggleMySubject('${k}')`);
+}
+
+function setMyProfile(key) {
+  appSettings.mySubjects = profileSubjects(key, appSettings.examLevel || 'vwo');
+  saveSettings();
+  renderPage('instellingen');
 }
 
 function updateExamLevel(level) {

@@ -38,8 +38,8 @@ const subjects = {
   frans:        { name: 'Frans',        color: '#6366F1', light: '#E0E7FF', teacher: '',                icon: '🇫🇷', levels: ['vmbo','havo','vwo'] },
   duits:        { name: 'Duits',        color: '#0EA5E9', light: '#E0F2FE', teacher: '',                icon: '🇩🇪', levels: ['vmbo','havo','vwo'] },
   spaans:       { name: 'Spaans',       color: '#F43F5E', light: '#FFE4E6', teacher: '',                icon: '🇪🇸', levels: ['havo','vwo'] },
-  latijn:       { name: 'Latijn',       color: '#B45309', light: '#FEF3C7', teacher: '',                icon: '🏺', levels: ['vwo'] },
-  grieks:       { name: 'Grieks',       color: '#92400E', light: '#FDE68A', teacher: '',                icon: '📜', levels: ['vwo'] },
+  latijn:       { name: 'Latijn',       color: '#B45309', light: '#FEF3C7', teacher: '',                icon: '🏺', levels: ['gymnasium'] },
+  grieks:       { name: 'Grieks',       color: '#92400E', light: '#FDE68A', teacher: '',                icon: '📜', levels: ['gymnasium'] },
 
   wiskunde:     { name: 'Wiskunde',     color: '#3B82F6', light: '#DBEAFE', teacher: 'Dhr. Bakker',    icon: '📐', levels: ['vmbo'] },
   wiskundea:    { name: 'Wiskunde A',   color: '#2563EB', light: '#DBEAFE', teacher: '',                icon: '📈', levels: ['havo','vwo'] },
@@ -72,16 +72,50 @@ const subjects = {
 
 // Examenniveaus
 const examLevels = {
-  vmbo: 'VMBO',
-  havo: 'HAVO',
-  vwo:  'VWO',
+  vmbo:      'VMBO',
+  havo:      'HAVO',
+  vwo:       'VWO',
+  gymnasium: 'Gymnasium',
 };
 
 // Welke vakken bestaan op een bepaald niveau?
+// Gymnasium = alles van vwo, plus de gymnasium-only vakken (Latijn/Grieks).
 function subjectsForLevel(level) {
   return Object.entries(subjects)
-    .filter(([, s]) => !s.levels || s.levels.includes(level))
+    .filter(([, s]) => {
+      if (!s.levels) return true;
+      if (level === 'gymnasium') return s.levels.includes('vwo') || s.levels.includes('gymnasium');
+      return s.levels.includes(level);
+    })
     .map(([key]) => key);
+}
+
+// --- Vakcategorieën (voor een overzichtelijke keuze) ---
+const subjectCategories = {
+  nederlands: 'Talen', engels: 'Talen', frans: 'Talen', duits: 'Talen', spaans: 'Talen', latijn: 'Talen', grieks: 'Talen',
+  wiskunde: 'Exacte vakken', wiskundea: 'Exacte vakken', wiskundeb: 'Exacte vakken', wiskundec: 'Exacte vakken', wiskunded: 'Exacte vakken',
+  natuurkunde: 'Exacte vakken', scheikunde: 'Exacte vakken', nask: 'Exacte vakken', biologie: 'Exacte vakken', nlt: 'Exacte vakken', informatica: 'Exacte vakken',
+  geschiedenis: 'Mens & maatschappij', aardrijkskunde: 'Mens & maatschappij', economie: 'Mens & maatschappij', bedrijfseconomie: 'Mens & maatschappij',
+  maatschappijleer: 'Mens & maatschappij', maatschappijwetenschappen: 'Mens & maatschappij', filosofie: 'Mens & maatschappij', godsdienst: 'Mens & maatschappij',
+  ckv: 'Kunst & overig', kunst: 'Kunst & overig', muziek: 'Kunst & overig', techniek: 'Kunst & overig', lo: 'Kunst & overig',
+};
+const categoryOrder = ['Talen', 'Exacte vakken', 'Mens & maatschappij', 'Kunst & overig'];
+function subjectCategory(key) { return subjectCategories[key] || 'Kunst & overig'; }
+
+// --- Vakkenpakketten (profielen) — snelle voorselectie ---
+// Nederlands en Engels horen er altijd bij (kernvakken).
+const profileCore = ['nederlands', 'engels'];
+const subjectProfiles = {
+  nt: { name: 'Natuur & Techniek',      icon: '🔬', subjects: ['wiskundeb', 'natuurkunde', 'scheikunde'] },
+  ng: { name: 'Natuur & Gezondheid',    icon: '🧬', subjects: ['wiskundea', 'biologie', 'scheikunde'] },
+  em: { name: 'Economie & Maatschappij',icon: '📊', subjects: ['wiskundea', 'economie', 'geschiedenis'] },
+  cm: { name: 'Cultuur & Maatschappij', icon: '🎭', subjects: ['wiskundea', 'geschiedenis', 'aardrijkskunde', 'filosofie'] },
+};
+function profileSubjects(profileKey, level) {
+  const prof = subjectProfiles[profileKey];
+  if (!prof) return [];
+  const avail = new Set(subjectsForLevel(level));
+  return [...new Set([...profileCore, ...prof.subjects])].filter(k => avail.has(k));
 }
 
 // De vakken die JIJ hebt gekozen (valt terug op een standaardselectie).
