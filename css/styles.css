@@ -3313,6 +3313,8 @@ a { color: inherit; text-decoration: none; }
   transition: var(--transition);
 }
 .profile-chip:hover { border-color: var(--accent); background: var(--accent-light); color: var(--accent-hover); }
+.profile-chip.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+.profile-chip.active:hover { background: var(--accent-hover); color: #fff; }
 .subj-group { margin-bottom: 14px; }
 .subj-group-title {
   font-size: 0.72rem;
