@@ -2412,9 +2412,10 @@ function renderPlanner() {
           <h1>Planner</h1>
           <p>Je route naar toetsweken &amp; examens — plan vooruit en blijf op schema</p>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="openAddPlanModal()">
-          ${icon('plus', 14)} Nieuwe planning
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="openGeneratePlanModal()">✨ Maak mijn planning</button>
+          <button class="btn btn-outline btn-sm" onclick="openAddPlanModal()">${icon('plus', 14)} Handmatig</button>
+        </div>
       </div>
 
       ${plans.length === 0 ? renderPlannerEmpty() : `
@@ -2430,9 +2431,10 @@ function renderPlannerEmpty() {
     <div class="card">
       <div class="empty-state">
         <div style="font-size:2.5rem;margin-bottom:8px">🎯</div>
-        <h3 style="margin:0 0 6px">Nog geen planning</h3>
-        <p style="margin:0 0 16px;color:var(--gray-500)">Maak een planning voor je aankomende toetsweek of examen.<br>Vul je beschikbare tijd en taken in, dan rekenen wij uit of je op schema loopt.</p>
-        <button class="btn btn-primary" onclick="openAddPlanModal()">${icon('plus', 16)} Nieuwe planning maken</button>
+        <h3 style="margin:0 0 6px">Laat je planning voor je maken</h3>
+        <p style="margin:0 0 16px;color:var(--gray-500)">Voeg je toetsen toe en wij maken automatisch de leertaken en het schema.<br>Daarna zie je elke dag of je op schema loopt.</p>
+        <button class="btn btn-primary" style="padding:12px 22px" onclick="openGeneratePlanModal()">✨ Maak mijn planning</button>
+        <div style="margin-top:10px"><button class="btn btn-outline btn-sm" onclick="openAddPlanModal()">${icon('plus', 14)} Liever handmatig</button></div>
       </div>
     </div>
   `;
@@ -3266,6 +3268,162 @@ function openAddPlanModal() {
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Aanmaken</button>
     </form>
   `);
+}
+
+// ===== "Maak mijn planning" — alles automatisch op basis van je toetsen =====
+let genExams = [];
+
+function openGeneratePlanModal() {
+  // Begin met je aankomende toetsen uit de Toetsen-pagina (scheelt invullen)
+  loadTests();
+  genExams = tests
+    .filter(t => startOfDay(new Date(t.date)) >= startOfDay(today))
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 12)
+    .map(t => ({ subject: t.subject, date: dateKey(new Date(t.date)), title: t.title || '' }));
+  if (genExams.length === 0) genExams = [{ subject: '', date: '', title: '' }];
+
+  openModal('✨ Maak mijn planning', `
+    <p style="color:var(--gray-500);font-size:0.88rem;margin:0 0 14px">
+      Voeg je toetsen toe — <strong>de rest doen wij</strong>. We maken automatisch leertaken (samenvatten, oefenen, herhalen) en zetten alles in een schema.
+    </p>
+
+    <div class="form-group">
+      <label class="form-label">Wat plan je?</label>
+      <div class="gen-type">
+        <label><input type="radio" name="gen-type" value="toetsweek" checked> Toetsweek</label>
+        <label><input type="radio" name="gen-type" value="examen"> Examen</label>
+      </div>
+    </div>
+
+    <label class="form-label">Je toetsen ${tests.filter(t => startOfDay(new Date(t.date)) >= startOfDay(today)).length ? '<span style="font-weight:400;color:var(--gray-400)">(overgenomen uit Toetsen — pas aan of vul aan)</span>' : ''}</label>
+    <div id="gen-exam-rows"></div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin:4px 0 16px" onclick="genAddRow()">${icon('plus', 14)} Toets toevoegen</button>
+
+    <div class="form-group">
+      <label class="form-label">Hoeveel wil je per toets leren?</label>
+      <select class="form-select" id="gen-amount">
+        <option value="2">Weinig — ±2 uur per toets</option>
+        <option value="4" selected>Gemiddeld — ±4 uur per toets</option>
+        <option value="6">Veel — ±6 uur per toets</option>
+        <option value="8">Heel veel — ±8 uur per toets</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Tijd per dag</label>
+        <input type="number" class="form-input" id="gen-daily" min="0.5" max="16" step="0.5" value="2">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Klaar (dagen vooraf)</label>
+        <input type="number" class="form-input" id="gen-ready" min="0" max="14" value="1">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;padding:12px" onclick="generatePlan()">
+      ✨ Maak mijn planning
+    </button>
+  `);
+  renderGenExamRows();
+}
+
+function renderGenExamRows() {
+  const box = document.getElementById('gen-exam-rows');
+  if (!box) return;
+  const opts = (sel) => mySubjectEntries().map(([k, s]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${s.name}</option>`).join('');
+  box.innerHTML = genExams.map((ex, i) => `
+    <div class="gen-exam-row">
+      <select class="form-select" onchange="genExams[${i}].subject=this.value">
+        <option value="">Vak...</option>${opts(ex.subject)}
+      </select>
+      <input type="date" class="form-input" value="${ex.date}" onchange="genExams[${i}].date=this.value">
+      <button type="button" class="lesson-action-btn delete" onclick="genRemoveRow(${i})" title="Verwijderen">${icons.x}</button>
+    </div>
+  `).join('');
+}
+
+function genAddRow() {
+  genExams.push({ subject: '', date: '', title: '' });
+  renderGenExamRows();
+}
+
+function genRemoveRow(i) {
+  genExams.splice(i, 1);
+  if (genExams.length === 0) genExams.push({ subject: '', date: '', title: '' });
+  renderGenExamRows();
+}
+
+// Splitst de uren van één toets in standaard leertaken
+function genTasksForExam(subject, baseTitle, totalHours) {
+  const parts = [
+    { label: 'Samenvatting / aantekeningen maken', frac: 0.4 },
+    { label: 'Oefenopgaven maken', frac: 0.4 },
+    { label: 'Herhalen & oefentoets', frac: 0.2 },
+  ];
+  const out = [];
+  let used = 0;
+  parts.forEach((p, idx) => {
+    let h = idx === parts.length - 1
+      ? Math.max(0.5, Math.round((totalHours - used) * 2) / 2)
+      : Math.max(0.5, Math.round(totalHours * p.frac * 2) / 2);
+    used += h;
+    out.push({ title: p.label, hours: h });
+  });
+  return out;
+}
+
+function generatePlan() {
+  const valid = genExams.filter(e => e.subject && e.date);
+  if (!valid.length) { alert('Voeg minstens één toets toe (vak + datum).'); return; }
+
+  const type = (document.querySelector('input[name="gen-type"]:checked') || {}).value || 'toetsweek';
+  const hoursPer = parseFloat(document.getElementById('gen-amount').value) || 4;
+  const daily = Math.max(0.5, parseFloat(document.getElementById('gen-daily').value) || 2);
+  const ready = Math.max(0, parseInt(document.getElementById('gen-ready').value) || 0);
+
+  const sorted = [...valid].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const earliest = new Date(sorted[0].date);
+
+  const id = Math.max(100, ...plans.map(p => p.id), 100) + 1;
+  const plan = {
+    id, type,
+    name: type === 'examen' ? 'Mijn examens' : 'Toetsweek',
+    startDate: new Date().toISOString(),
+    examDate: earliest.toISOString(),
+    readyDaysBefore: ready,
+    defaultDailyHours: daily,
+    availability: {}, slots: {}, exams: [], tasks: [],
+  };
+
+  let exId = 1, taskId = 1;
+  sorted.forEach(e => {
+    const s = subjects[e.subject];
+    plan.exams.push({ id: exId++, subject: e.subject, title: e.title || '', date: new Date(e.date).toISOString(), time: '' });
+    genTasksForExam(e.subject, e.title, hoursPer).forEach(t => {
+      plan.tasks.push({ id: taskId++, subject: e.subject, title: `${t.title} — ${s ? s.name : ''}`.trim(), hours: t.hours, hoursDone: 0, done: false });
+    });
+  });
+
+  plans.push(plan);
+  activePlanId = id;
+  savePlans();
+  closeModal();
+  renderPage('planner');
+
+  // Korte uitleg na het genereren
+  const st = planStatus(plan);
+  setTimeout(() => {
+    openModal('Klaar! 🎉', `
+      <p style="margin:0 0 12px">Je planning <strong>${esc(plan.name)}</strong> staat klaar met <strong>${plan.exams.length} toets${plan.exams.length !== 1 ? 'en' : ''}</strong> en <strong>${plan.tasks.length} leertaken</strong>, automatisch ingepland.</p>
+      <ul class="onb-list" style="margin-bottom:14px">
+        <li>Vink taken af of log je uren — je ziet of je op schema loopt</li>
+        <li>Niet genoeg tijd? Pas "Tijd per dag" of de taken aan</li>
+        <li>Iets liever eerder doen? Tik op de ⭐ bij een taak</li>
+        <li>Wil je zelf schuiven? Gebruik "Schema aanpassen"</li>
+      </ul>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Aan de slag</button>
+    `);
+  }, 200);
 }
 
 function readPlanForm() {
