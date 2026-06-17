@@ -129,7 +129,48 @@ function showApp() {
 }
 
 // --- Initialize App ---
+// --- Thema (licht / donker / systeem) ---
+function getThemePref() {
+  return localStorage.getItem('sp_theme') || 'system';
+}
+
+function applyTheme(pref) {
+  const sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const dark = pref === 'dark' || (pref === 'system' && sys);
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+}
+
+function setThemePref(pref) {
+  localStorage.setItem('sp_theme', pref);
+  applyTheme(pref);
+  if (typeof renderPage === 'function') renderPage('instellingen');
+}
+
+// Reageer op systeemwisseling zolang de gebruiker 'systeem' heeft gekozen
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getThemePref() === 'system') applyTheme('system');
+  });
+}
+
+// Leest het Magister-token uit de URL-hash die de bookmarklet meegeeft,
+// wist de hash meteen weer (zodat het token niet in de adresbalk blijft staan).
+function handleMagisterHash() {
+  const h = window.location.hash || '';
+  if (h.indexOf('mag=') < 0) return null;
+  const params = new URLSearchParams(h.replace(/^#/, ''));
+  const token = params.get('mag');
+  const school = params.get('school');
+  // Hash direct opschonen
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+  if (!token || !school) return null;
+  return { token, school };
+}
+
 function initApp() {
+  // Thema zo vroeg mogelijk toepassen om kort opflikkeren te voorkomen
+  applyTheme(getThemePref());
+
   // Load persistent data
   loadSettings();
   loadTodos();
@@ -141,13 +182,19 @@ function initApp() {
   loadGrades();
   loadIcalFeeds();
 
+  // Magister-koppeling via de bookmarklet? (#mag=token&school=...)
+  const magHandoff = handleMagisterHash();
+
   // Parse hash
   const hash = window.location.hash.slice(1);
-  if (hash && routes[hash]) {
+  if (!magHandoff && hash && routes[hash]) {
     currentPage = hash;
   }
 
   showApp();
+
+  // Na het tonen van de app de Magister-data binnenhalen.
+  if (magHandoff) runMagisterSync(magHandoff.school, magHandoff.token);
 
   // Eerste bezoek? Toon de welkomst-wizard (niveau + vakken kiezen).
   // Bestaande gebruikers (met al opgeslagen gegevens) slaan we stilzwijgend over.

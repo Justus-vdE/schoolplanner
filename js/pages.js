@@ -533,38 +533,180 @@ function openMagisterModal(source) {
           Ontkoppelen
         </button>
       ` : `
-        <p class="connect-desc">Koppel je Magister account om je gegevens automatisch te importeren en up-to-date te houden.</p>
-        <div class="demo-note">&#9888;&#65039; Demo: er wordt geen echte verbinding gemaakt. Vul hier <strong>niet</strong> je echte Magister-wachtwoord in.</div>
-        <form onsubmit="connectMagister(event)">
-          <div class="form-group">
-            <label class="form-label">School</label>
-            <input type="text" class="form-input" id="magister-school" placeholder="Naam van je school..." required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Gebruikersnaam</label>
-            <input type="text" class="form-input" id="magister-user" placeholder="Leerlingnummer of email..." required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Wachtwoord</label>
-            <input type="password" class="form-input" id="magister-pass" placeholder="Je Magister wachtwoord..." required>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            Verbinden
-          </button>
-        </form>
+        <p class="connect-desc">Koppel je Magister-account. Je logt gewoon op Magister zelf in (ook met Microsoft) — wij vragen <strong>nooit</strong> je wachtwoord.</p>
+        <ol class="magister-steps">
+          <li><strong>Sleep</strong> de groene knop hieronder naar je <strong>bladwijzer-/favorietenbalk</strong>.</li>
+          <li>Open <strong>Magister</strong> en log normaal in.</li>
+          <li>Klik op de bladwijzer <strong>"📚 Koppel met Magister"</strong> — je gegevens verschijnen hier vanzelf.</li>
+        </ol>
+        <div class="bookmarklet-box">
+          <a class="bookmarklet-btn" href="${esc(magisterBookmarklet())}" onclick="return magisterBookmarkletClicked(event)">📚 Koppel met Magister</a>
+          <span class="form-hint">Sleep deze knop naar je bladwijzerbalk (niet klikken).</span>
+        </div>
+        <details class="magister-advanced">
+          <summary>Werkt slepen niet? Plak je token handmatig</summary>
+          <form onsubmit="connectMagister(event)" style="margin-top:8px">
+            <div class="form-group">
+              <label class="form-label">School</label>
+              <input type="text" class="form-input" id="magister-school" placeholder="bijv. nieuwelyceum" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bearer-token</label>
+              <input type="text" class="form-input" id="magister-token" placeholder="Plak hier je token..." required>
+            </div>
+            <input type="hidden" id="magister-user"><input type="hidden" id="magister-pass">
+            <div id="magister-error" class="magister-error" style="display:none"></div>
+            <button type="submit" class="btn btn-primary" id="magister-submit" style="width:100%;justify-content:center;margin-top:8px">Verbinden</button>
+          </form>
+        </details>
       `}
     </div>
   `);
 }
 
-function connectMagister(e) {
+// Bouwt de bookmarklet die op magister.net het token pakt en onze app opent.
+function magisterBookmarklet() {
+  const origin = window.location.origin;
+  const code = `(function(){try{var t=null,s=location.hostname.replace('.magister.net','');function f(st){for(var i=0;i<st.length;i++){var v=st.getItem(st.key(i));if(!v)continue;if(v.indexOf('access_token')>=0){try{var o=JSON.parse(v);if(o.access_token){t=o.access_token;return;}}catch(e){}}}}f(sessionStorage);if(!t)f(localStorage);if(!t){alert('Geen Magister-sessie gevonden. Log eerst in op Magister en klik dan deze knop.');return;}window.open('${origin}/#mag='+encodeURIComponent(t)+'&school='+encodeURIComponent(s),'_blank');}catch(e){alert('Fout: '+e);}})();`;
+  return 'javascript:' + encodeURIComponent(code);
+}
+
+function magisterBookmarkletClicked(e) {
+  e.preventDefault();
+  alert('Sleep deze knop naar je bladwijzerbalk — niet klikken. Daarna open je Magister, log je in, en klik je de bladwijzer aan.');
+  return false;
+}
+
+async function connectMagister(e) {
   e.preventDefault();
   const school = document.getElementById('magister-school').value.trim();
   const user = document.getElementById('magister-user').value.trim();
-  saveMagisterConnection(true, { school, user });
-  closeModal();
-  renderPage(currentPage);
+  const pass = document.getElementById('magister-pass').value;
+  const token = (document.getElementById('magister-token') || {}).value;
+  const errEl = document.getElementById('magister-error');
+  const btn = document.getElementById('magister-submit');
+
+  const showErr = (msg) => {
+    if (!errEl) return alert(msg);
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  };
+
+  if (errEl) errEl.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = 'Verbinden...'; }
+
+  try {
+    const payload = token && token.trim()
+      ? { action: 'data', school, token: token.trim() }
+      : { action: 'login', school, username: user, password: pass };
+    const res = await fetch('/api/magister', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      showErr(data.message || data.error || 'Verbinden mislukt. Controleer je gegevens.');
+      return;
+    }
+
+    // Gelukt: gegevens opslaan en verbinding markeren.
+    importMagisterData(data);
+    saveMagisterConnection(true, { school, user: data.account?.naam || user });
+    closeModal();
+    renderPage(currentPage);
+  } catch (err) {
+    showErr('Kon de server niet bereiken. Probeer het later opnieuw.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Verbinden'; }
+  }
+}
+
+// Verwerkt de ruwe Magister-data uit de proxy naar onze eigen opslag:
+// cijfers → grades, afspraken → weekrooster.
+function importMagisterData(data) {
+  let importedGrades = 0, importedLessons = 0;
+
+  // --- Cijfers ---
+  const items = (data && data.cijfers && data.cijfers.items) || [];
+  if (items.length) {
+    const fresh = {}; // alleen vakken die in de import zitten herbouwen
+    items.forEach(it => {
+      const key = detectSubjectKey(it.vak && it.vak.code) || detectSubjectKey(it.vak && it.vak.omschrijving);
+      if (!key) return;
+      const num = parseFloat(String(it.waarde || '').replace(',', '.'));
+      if (isNaN(num) || num < 1 || num > 10) return; // sla "U", "Inh", "v6" e.d. over
+      if (!fresh[key]) fresh[key] = { grades: [], descriptions: [], weights: [] };
+      fresh[key].grades.push(Math.round(num * 10) / 10);
+      fresh[key].descriptions.push(it.omschrijving || 'Cijfer uit Magister');
+      fresh[key].weights.push(it.weegfactor > 0 ? it.weegfactor : 1);
+      importedGrades++;
+    });
+    // Vervang de cijfers van de geïmporteerde vakken, behoud de rest.
+    Object.keys(fresh).forEach(k => { grades[k] = fresh[k]; });
+    saveGrades();
+  }
+
+  // --- Afspraken → weekrooster ---
+  const afspraken = (data && data.afspraken && data.afspraken.Items) || [];
+  if (afspraken.length) {
+    const dagNamen = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+    const fresh = { maandag: [], dinsdag: [], woensdag: [], donderdag: [], vrijdag: [] };
+    const today0 = startOfDay(today);
+    afspraken.forEach(a => {
+      if (!a.Vakken || !a.Vakken.length || a.DuurtHeleDag) return;
+      const start = new Date(a.Start);
+      // Alleen lessen van vandaag t/m de komende 7 dagen (het actuele rooster).
+      if (start < today0 || start > addDays(today0, 7)) return;
+      const dag = dagNamen[start.getDay()];
+      if (!fresh[dag]) return; // weekend overslaan
+      const subj = detectSubjectKey(a.Vakken[0].Naam) || detectSubjectKey(a.Vakken[0].Naam && a.Vakken[0].Naam.toLowerCase());
+      const time = `${fmtClock(a.Start)} - ${fmtClock(a.Einde)}`;
+      if (fresh[dag].some(l => l.hour === a.LesuurVan && l.time === time)) return;
+      fresh[dag].push({
+        hour: a.LesuurVan || 0,
+        time,
+        subject: subj || 'overig',
+        room: a.Lokatie || (a.Lokalen && a.Lokalen[0] && a.Lokalen[0].Naam) || '',
+      });
+      importedLessons++;
+    });
+    Object.keys(fresh).forEach(d => { if (fresh[d].length) fresh[d].sort((x, y) => x.hour - y.hour); });
+    // Alleen overschrijven als we daadwerkelijk lessen vonden.
+    if (importedLessons) { Object.keys(fresh).forEach(d => { schedule[d] = fresh[d]; }); saveSchedule(); }
+  }
+
+  localStorage.setItem('sp_magister_sync', String(Date.now()));
+  return { importedGrades, importedLessons };
+}
+
+// Tijd uit een Magister-ISO-string (UTC) naar lokale "HH:MM".
+function fmtClock(iso) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// Haalt het token uit de bookmarklet-handoff binnen, synct via de proxy en importeert.
+async function runMagisterSync(school, token) {
+  try {
+    const res = await fetch('/api/magister', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'data', school, token }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      alert('Magister-sync mislukt: ' + (data.message || data.error || 'onbekende fout. Token mogelijk verlopen — log opnieuw in en klik de knop nog eens.'));
+      return;
+    }
+    const result = importMagisterData(data);
+    saveMagisterConnection(true, { school, user: data.account && data.account.naam });
+    renderPage(currentPage);
+    alert(`✓ Magister gekoppeld!\n${result.importedGrades} cijfers en ${result.importedLessons} lessen geïmporteerd.`);
+  } catch (e) {
+    alert('Kon niet synchroniseren met de server. Probeer het later opnieuw.');
+  }
 }
 
 function disconnectMagister() {
@@ -1829,6 +1971,24 @@ function renderInstellingen() {
       </div>
 
       <div class="settings-grid">
+        <!-- Weergave / thema -->
+        <div class="card settings-card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+              Weergave
+            </div>
+          </div>
+          <div class="settings-section">
+            <label class="form-label">Thema</label>
+            <div class="theme-toggle">
+              ${[['light', '☀️ Licht'], ['dark', '🌙 Donker'], ['system', '💻 Systeem']].map(([val, lbl]) =>
+                `<button class="theme-opt ${getThemePref() === val ? 'on' : ''}" onclick="setThemePref('${val}')">${lbl}</button>`).join('')}
+            </div>
+            <span class="form-hint">"Systeem" volgt automatisch de licht/donker-instelling van je telefoon of computer.</span>
+          </div>
+        </div>
+
         <!-- Profiel -->
         <div class="card settings-card">
           <div class="card-header">
@@ -2601,15 +2761,19 @@ function renderPlanDetail(plan) {
       <!-- Taken -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">${icon('listChecks')} Wat moet je doen</div>
+          <button class="card-title card-collapse-toggle" onclick="toggleTasksCollapsed(${plan.id})" title="${tasksCollapsed ? 'Uitklappen' : 'Inklappen'}">
+            <span class="collapse-caret ${tasksCollapsed ? '' : 'open'}">▶</span>
+            ${icon('listChecks')} Wat moet je doen
+            <span class="collapse-count">${plan.tasks.length}</span>
+          </button>
           <div style="display:flex;gap:6px">
             <button class="btn btn-outline btn-sm" onclick="openPasteTasksModal(${plan.id})">&#128203; Lijst plakken</button>
             <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${plan.id})">${icon('plus', 14)} Taak</button>
           </div>
         </div>
-        ${plan.tasks.length === 0
+        ${tasksCollapsed ? '' : (plan.tasks.length === 0
           ? '<div class="empty-state empty-state-compact"><p>Nog geen taken. Voeg toe wat je moet doen en hoelang het duurt.</p></div>'
-          : plan.tasks.map(t => renderTaskRow(plan, t)).join('')}
+          : plan.tasks.map(t => renderTaskRow(plan, t)).join(''))}
       </div>
 
       <!-- Beschikbare tijd -->
@@ -2651,7 +2815,7 @@ function renderTaskRow(plan, t) {
         <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
         <div class="plan-task-info">
           <div class="plan-task-title ${isDone ? 'done' : ''}">${t.priority ? '<span class="prio-star" title="Eerder doen">★</span> ' : ''}${esc(t.title)}</div>
-          <div class="plan-task-sub">${s ? s.name : 'Algemeen'} · ${fmtHours(done)} / ${fmtHours(t.hours)}</div>
+          <div class="plan-task-sub">${s ? s.name : 'Algemeen'} · ${fmtHours(done)} / ${fmtHours(t.hours)}${t.prefDay != null ? ` · 📅 ${prefDayFull[t.prefDay]}` : ''}</div>
         </div>
         <div class="plan-task-actions">
           <button class="lesson-action-btn prio-btn ${t.priority ? 'on' : ''}" onclick="toggleTaskPriority(${plan.id},${t.id})" title="${t.priority ? 'Niet meer eerder doen' : 'Eerder doen'}">${t.priority ? '★' : '☆'}</button>
@@ -2671,6 +2835,13 @@ function renderTaskRow(plan, t) {
 }
 
 let availExpanded = false;
+let tasksCollapsed = localStorage.getItem('sp_tasks_collapsed') === 'true';
+
+function toggleTasksCollapsed(planId) {
+  tasksCollapsed = !tasksCollapsed;
+  localStorage.setItem('sp_tasks_collapsed', tasksCollapsed ? 'true' : 'false');
+  renderPage('planner');
+}
 
 function toggleAvailExpanded(planId) {
   availExpanded = !availExpanded;
@@ -2973,9 +3144,12 @@ function renderSubjectOverview(plan) {
               <div class="subject-ov-head">${s.icon} ${s.name}</div>
               <div class="subject-ov-meta">${st.exam ? `${icon('fileText', 11)} toets ${formatDateShort(new Date(st.exam.date))}` : 'geen toetsdatum'}</div>
               <div class="subject-ov-status ${done ? 'done' : ''}">
-                ${st.totalH === 0 ? 'nog geen stof' : done ? '✓ helemaal klaar' : `${st.remaining} te doen · ${fmtHours(st.totalH - st.doneH)}`}
+                ${st.totalH === 0 ? 'nog geen stof' : done ? '✓ helemaal klaar' : `${st.pct}% af · ${st.remaining} te doen · ${fmtHours(st.totalH - st.doneH)}`}
               </div>
-              <div class="plan-task-bar"><div class="plan-task-bar-fill" style="width:${st.pct}%;background:${s.color}"></div></div>
+              <div class="subject-ov-bar-row">
+                <div class="plan-task-bar"><div class="plan-task-bar-fill" style="width:${st.pct}%;background:${s.color}"></div></div>
+                ${st.totalH > 0 ? `<span class="subject-ov-pct">${st.pct}%</span>` : ''}
+              </div>
             </button>`;
         }).join('')}
       </div>
@@ -3587,6 +3761,54 @@ function setAvailability(id, key, value) {
 }
 
 // --- Taken CRUD ---
+const prefDayFull = ['Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'];
+const prefDayShort = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
+const prefDayOrder = ['', 1, 2, 3, 4, 5, 6, 0];
+
+function prefDayLabel(d) {
+  return (d == null || d === '') ? 'Geen voorkeur' : prefDayFull[d];
+}
+
+function prefDayControl(prefix, selected) {
+  const sel = (selected == null) ? '' : selected;
+  const opts = prefDayOrder.map(d => {
+    const on = String(d) === String(sel) ? ' on' : '';
+    const lbl = d === '' ? 'Geen' : prefDayShort[d];
+    return `<button type="button" class="prefday-opt${on}" data-val="${d}" onclick="setPrefDay('${prefix}',this,'${d}')">${lbl}</button>`;
+  }).join('');
+  return `
+    <div class="prefday-control">
+      <input type="hidden" id="${prefix}-prefday" value="${sel}">
+      <button type="button" class="prefday-toggle" onclick="togglePrefDay('${prefix}')">
+        📅 Voorkeursdag: <strong id="${prefix}-prefday-label">${prefDayLabel(selected)}</strong>
+      </button>
+      <div class="prefday-options" id="${prefix}-prefday-options" hidden>${opts}</div>
+    </div>`;
+}
+
+function togglePrefDay(prefix) {
+  const box = document.getElementById(prefix + '-prefday-options');
+  if (box) box.hidden = !box.hidden;
+}
+
+function setPrefDay(prefix, btn, val) {
+  const input = document.getElementById(prefix + '-prefday');
+  if (input) input.value = val;
+  const label = document.getElementById(prefix + '-prefday-label');
+  if (label) label.textContent = prefDayLabel(val === '' ? '' : +val);
+  const box = document.getElementById(prefix + '-prefday-options');
+  if (box) {
+    box.querySelectorAll('.prefday-opt').forEach(b => b.classList.toggle('on', b === btn));
+    box.hidden = true;
+  }
+}
+
+function readPrefDay(prefix) {
+  const input = document.getElementById(prefix + '-prefday');
+  if (!input || input.value === '') return null;
+  return +input.value;
+}
+
 function openAddTaskModal(planId) {
   const subjectOptions = mySubjectEntries().map(([key, s]) =>
     `<option value="${key}">${s.name}</option>`).join('');
@@ -3608,6 +3830,7 @@ function openAddTaskModal(planId) {
         <input type="number" class="form-input" id="task-hours" min="0.5" max="40" step="0.5" value="2" required>
       </div>
       <label class="prio-check"><input type="checkbox" id="task-prio"> ★ Eerder doen (vooraan in je schema)</label>
+      ${prefDayControl('task', null)}
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Toevoegen</button>
     </form>
   `);
@@ -3678,7 +3901,8 @@ function addTask(e, planId) {
   if (!subject || !title || !hours) return;
   const id = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
   const priority = !!(document.getElementById('task-prio') && document.getElementById('task-prio').checked);
-  p.tasks.push({ id, subject, title, hours, hoursDone: 0, done: false, priority });
+  const prefDay = readPrefDay('task');
+  p.tasks.push({ id, subject, title, hours, hoursDone: 0, done: false, priority, prefDay });
   savePlans();
   closeModal();
   renderPage('planner');
@@ -3718,6 +3942,7 @@ function openEditTaskModal(planId, taskId) {
         <input type="number" class="form-input" id="edit-task-done" min="0" max="40" step="0.25" value="${Math.max(0, t.hoursDone || 0)}">
       </div>
       <label class="prio-check"><input type="checkbox" id="edit-task-prio" ${t.priority ? 'checked' : ''}> ★ Eerder doen (vooraan in je schema)</label>
+      ${prefDayControl('edit-task', t.prefDay == null ? null : t.prefDay)}
       <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Opslaan</button>
     </form>
   `);
@@ -3736,6 +3961,7 @@ function editTask(e, planId, taskId) {
   t.hoursDone = isNaN(done) ? (t.hoursDone || 0) : Math.min(t.hours, Math.max(0, done));
   t.done = t.hoursDone >= t.hours;
   t.priority = !!document.getElementById('edit-task-prio').checked;
+  t.prefDay = readPrefDay('edit-task');
   savePlans();
   closeModal();
   renderPage('planner');
@@ -3769,8 +3995,10 @@ function logTaskHours(planId, taskId, delta) {
   if (!p) return;
   const t = p.tasks.find(x => x.id === taskId);
   if (!t) return;
+  const before = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
   t.hoursDone = Math.min(t.hours, Math.max(0, (t.hoursDone || 0) + delta));
   t.done = t.hoursDone >= t.hours;
+  recordDailyLog(p, t.hoursDone - before); // hou bij hoeveel je vandaag al studeerde
   if (delta > 0) updateStreak(); // studeren telt mee voor je streak
   savePlans();
   closeModal();
@@ -3789,11 +4017,23 @@ function toggleTaskDone(planId, taskId) {
   if (!p) return;
   const t = p.tasks.find(x => x.id === taskId);
   if (!t) return;
+  const before = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
   t.done = !(t.hoursDone >= t.hours);
   t.hoursDone = t.done ? t.hours : 0;
+  recordDailyLog(p, t.hoursDone - before);
   if (t.done) updateStreak();
   savePlans();
   renderPage('planner');
+}
+
+// Houdt per dag bij hoeveel uur je hebt gestudeerd, zodat het schema
+// de tijd die je vandaag al gedaan hebt van je dagbudget aftrekt en niet
+// steeds opnieuw je dag volplant.
+function recordDailyLog(plan, deltaHours) {
+  if (!deltaHours) return;
+  if (!plan.dailyLogged) plan.dailyLogged = {};
+  const key = dateKey(startOfDay(today));
+  plan.dailyLogged[key] = Math.max(0, (plan.dailyLogged[key] || 0) + deltaHours);
 }
 
 function deleteTask(planId, taskId) {

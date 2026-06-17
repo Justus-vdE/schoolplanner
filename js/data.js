@@ -1011,10 +1011,14 @@ function buildSchedule(plan) {
   const days = [];
   for (let d = new Date(today0); d <= deadline; d = addDays(d, 1)) {
     const slots = [...daySlots(plan, d)].sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+    const key = dateKey(d);
+    // Uren die je die dag al hebt gestudeerd gaan van je dagbudget af, zodat
+    // het schema niet steeds opnieuw je dag tot het maximum volplant.
+    const loggedToday = (plan.dailyLogged && plan.dailyLogged[key]) || 0;
     days.push({
       date: new Date(d),
-      key: dateKey(d),
-      capacity: Math.max(0, availabilityFor(plan, d)),
+      key,
+      capacity: Math.max(0, availabilityFor(plan, d) - loggedToday),
       slots,
       used: 0,
       assignments: [],
@@ -1074,6 +1078,22 @@ function buildSchedule(plan) {
         for (const it of prio) {
           if (free <= 0.0001) break;
           if (it.rem <= 0.0001 || it.due < day.date) continue;
+          const chunk = Math.min(it.rem, free);
+          place(day, it, chunk);
+          free -= chunk;
+        }
+      }
+    }
+
+    // Fase 1b: taken met een voorkeursdag op die weekdag inplannen
+    const pref = items.filter(i => i.task.prefDay != null);
+    if (pref.length) {
+      for (const day of days) {
+        let free = day.capacity - day.used;
+        for (const it of pref) {
+          if (free <= 0.0001) break;
+          if (it.rem <= 0.0001 || it.due < day.date) continue;
+          if (day.date.getDay() !== it.task.prefDay) continue;
           const chunk = Math.min(it.rem, free);
           place(day, it, chunk);
           free -= chunk;

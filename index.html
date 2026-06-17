@@ -15,7 +15,15 @@
   <meta property="og:locale" content="nl_NL">
   <meta name="robots" content="index, follow">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-  <link rel="stylesheet" href="css/styles.css?v=25">
+  <link rel="stylesheet" href="css/styles.css?v=27">
+  <script>
+    // Thema meteen zetten, vóór het renderen, om opflikkeren te voorkomen
+    (function () {
+      var p = localStorage.getItem('sp_theme') || 'system';
+      var dark = p === 'dark' || (p === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    })();
+  </script>
 </head>
 <body>
   <!-- App Shell -->
@@ -36,9 +44,9 @@
   </div>
 
   <!-- Scripts (order matters) -->
-  <script src="js/data.js?v=25"></script>
-  <script src="js/components.js?v=25"></script>
-  <script src="js/pages.js?v=25"></script>
-  <script src="js/app.js?v=25"></script>
+  <script src="js/data.js?v=27"></script>
+  <script src="js/components.js?v=27"></script>
+  <script src="js/pages.js?v=27"></script>
+  <script src="js/app.js?v=27"></script>
 </body>
 </html>
