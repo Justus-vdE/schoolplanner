@@ -12,7 +12,10 @@
       "Bash(sed -i '' 's/\\\\.css?v=27/.css?v=28/; s/\\\\.js?v=27/.js?v=28/g' index.html)",
       "Bash(git add *)",
       "Bash(git commit -q -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(grep -oE \"\\(color|background\\)\\(-color\\)?:\\\\s*#[0-9A-Fa-f]{3,6}\" js/pages.js)",
+      "Bash(grep -nB3 \"background: #EDE9FE\\\\|background: #DBEAFE\\\\|background: #F0F7FF\" css/styles.css)",
+      "Bash(sed -i '' 's/\\\\.css?v=28/.css?v=29/; s/\\\\.js?v=28/.js?v=29/g' index.html)"
     ]
   }
 }
