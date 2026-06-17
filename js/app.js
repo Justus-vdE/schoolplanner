@@ -84,9 +84,9 @@ function renderNavbar() {
           <circle cx="12" cy="12" r="3"/>
         </svg>
       </div>
-      <div class="navbar-notification" onclick="toggleNotifications(event)">
+      <div class="navbar-notification" onclick="toggleNotifications(event)" title="Meldingen — huiswerk, toetsen en je planning">
         ${icons.bell}
-        ${buildNotifications().length > 0 ? '<div class="badge"></div>' : ''}
+        ${buildNotifications().length > 0 ? `<div class="badge">${buildNotifications().length}</div>` : ''}
         <div class="notification-dropdown" id="notification-dropdown">
           ${renderNotifications()}
         </div>

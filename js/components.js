@@ -238,7 +238,8 @@ function buildNotifications() {
 function renderNotifications() {
   const notifs = buildNotifications();
   return `
-    <div class="notification-dropdown-header">Meldingen</div>
+    <div class="notification-dropdown-header">🔔 Meldingen</div>
+    <div class="notification-dropdown-sub">Huiswerk dat af moet, toetsen die eraan komen en of je achterloopt op je planning.</div>
     ${notifs.length === 0 ? '<div class="notification-empty">Geen meldingen — je bent helemaal bij! 🎉</div>' : notifs.map(n => `
       <div class="notification-item">
         <div class="notification-icon" style="background:${n.bg}">${n.icon}</div>
