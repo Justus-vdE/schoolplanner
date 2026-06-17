@@ -8,7 +8,11 @@
       "Bash(mdfind -name npm -onlyin /usr/local)",
       "Bash(mdfind -name npm -onlyin /opt)",
       "Read(//opt/homebrew/opt/**)",
-      "Read(//usr/local/**)"
+      "Read(//usr/local/**)",
+      "Bash(sed -i '' 's/\\\\.css?v=27/.css?v=28/; s/\\\\.js?v=27/.js?v=28/g' index.html)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

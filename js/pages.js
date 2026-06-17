@@ -533,16 +533,35 @@ function openMagisterModal(source) {
           Ontkoppelen
         </button>
       ` : `
-        <p class="connect-desc">Koppel je Magister-account. Je logt gewoon op Magister zelf in (ook met Microsoft) — wij vragen <strong>nooit</strong> je wachtwoord.</p>
-        <ol class="magister-steps">
-          <li><strong>Sleep</strong> de groene knop hieronder naar je <strong>bladwijzer-/favorietenbalk</strong>.</li>
-          <li>Open <strong>Magister</strong> en log normaal in.</li>
-          <li>Klik op de bladwijzer <strong>"📚 Koppel met Magister"</strong> — je gegevens verschijnen hier vanzelf.</li>
-        </ol>
-        <div class="bookmarklet-box">
-          <a class="bookmarklet-btn" href="${esc(magisterBookmarklet())}" onclick="return magisterBookmarkletClicked(event)">📚 Koppel met Magister</a>
-          <span class="form-hint">Sleep deze knop naar je bladwijzerbalk (niet klikken).</span>
+        <p class="connect-desc">Haal je <strong>cijfers én rooster</strong> in één klik uit Magister. Je logt op Magister zelf in (ook met Microsoft) — wij vragen <strong>nooit</strong> je wachtwoord.</p>
+
+        <div class="bm-guide">
+          <div class="bm-step">
+            <span class="bm-num">1</span>
+            <div class="bm-step-body">
+              <strong>Sleep</strong> deze knop omhoog naar je <strong>favorietenbalk</strong> (niet klikken):
+              <div class="bm-drop">
+                <span class="bm-arrow">↑ sleep naar je balk</span>
+                <a class="bookmarklet-btn" href="${esc(magisterBookmarklet())}" onclick="return magisterBookmarkletClicked(event)">📚 Koppel met Magister</a>
+              </div>
+              <span class="form-hint">Geen favorietenbalk zichtbaar? Zet 'm aan met <strong>⌘ + Shift + B</strong>.</span>
+            </div>
+          </div>
+          <div class="bm-step">
+            <span class="bm-num">2</span>
+            <div class="bm-step-body">Open <strong>Magister</strong> en log normaal in.</div>
+          </div>
+          <div class="bm-step">
+            <span class="bm-num">3</span>
+            <div class="bm-step-body">Klik in je balk op <strong>📚 Koppel met Magister</strong> — je cijfers én rooster verschijnen hier vanzelf.</div>
+          </div>
         </div>
+
+        <div class="bm-rooster-tip">
+          📅 <strong>Wil je dat je rooster zichzelf bijhoudt</strong> zonder te klikken? Koppel het daarnaast één keer via
+          <button class="link-btn" onclick="closeModal();openCalendarConnectModal()">Agenda koppelen</button> — dat ververst dan automatisch.
+        </div>
+
         <details class="magister-advanced">
           <summary>Werkt slepen niet? Plak je token handmatig</summary>
           <form onsubmit="connectMagister(event)" style="margin-top:8px">
@@ -624,7 +643,7 @@ async function connectMagister(e) {
 }
 
 // Verwerkt de ruwe Magister-data uit de proxy naar onze eigen opslag:
-// cijfers → grades, afspraken → weekrooster.
+// cijfers → grades, afspraken → weekrooster. Eén klik doet allebei.
 function importMagisterData(data) {
   let importedGrades = 0, importedLessons = 0;
 
@@ -661,7 +680,7 @@ function importMagisterData(data) {
       if (start < today0 || start > addDays(today0, 7)) return;
       const dag = dagNamen[start.getDay()];
       if (!fresh[dag]) return; // weekend overslaan
-      const subj = detectSubjectKey(a.Vakken[0].Naam) || detectSubjectKey(a.Vakken[0].Naam && a.Vakken[0].Naam.toLowerCase());
+      const subj = detectSubjectKey(a.Vakken[0].Naam);
       const time = `${fmtClock(a.Start)} - ${fmtClock(a.Einde)}`;
       if (fresh[dag].some(l => l.hour === a.LesuurVan && l.time === time)) return;
       fresh[dag].push({
@@ -703,7 +722,7 @@ async function runMagisterSync(school, token) {
     const result = importMagisterData(data);
     saveMagisterConnection(true, { school, user: data.account && data.account.naam });
     renderPage(currentPage);
-    alert(`✓ Magister gekoppeld!\n${result.importedGrades} cijfers en ${result.importedLessons} lessen geïmporteerd.`);
+    alert(`✓ Magister bijgewerkt!\n${result.importedGrades} cijfers en ${result.importedLessons} lessen geïmporteerd.`);
   } catch (e) {
     alert('Kon niet synchroniseren met de server. Probeer het later opnieuw.');
   }
