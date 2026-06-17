@@ -2829,6 +2829,8 @@ a { color: inherit; text-decoration: none; }
 }
 .week-strip-cell.today { border-color: var(--accent); background: var(--accent-light); }
 .week-strip-cell.free { opacity: 0.55; }
+.week-strip-cell.done { opacity: 1; border-color: var(--accent); }
+.week-strip-cell.done .week-strip-hours { color: var(--accent); }
 .week-strip-day { font-size: 0.68rem; color: var(--gray-500); font-weight: 600; }
 .week-strip-hours { font-size: 0.92rem; font-weight: 700; color: var(--gray-800); }
 .week-strip-cell.today .week-strip-hours { color: var(--accent-hover); }

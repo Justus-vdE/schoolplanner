@@ -2904,18 +2904,22 @@ function renderAvailabilityRows(plan) {
 }
 
 // Compacte weekbalk: geplande uren per dag voor de komende 7 dagen
-function renderWeekStrip(sched) {
+function renderWeekStrip(sched, plan) {
   const today0 = startOfDay(today);
   const dayShort = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
+  const loggedToday = (plan && plan.dailyLogged && plan.dailyLogged[dateKey(today0)]) || 0;
   const cells = [];
   for (let i = 0; i < 7; i++) {
     const d = addDays(today0, i);
     const day = sched.days.find(x => +x.date === +d);
     const hours = day ? day.used : 0;
+    // Vandaag niets meer te doen, maar je hebt wel al uren gestudeerd? → "klaar"
+    const doneToday = i === 0 && hours === 0 && loggedToday > 0.05;
+    const label = hours > 0 ? fmtHours(hours).replace(' uur', '') + 'u' : (doneToday ? '✓ klaar' : 'vrij');
     cells.push(`
-      <div class="week-strip-cell ${i === 0 ? 'today' : ''} ${hours === 0 ? 'free' : ''}">
+      <div class="week-strip-cell ${i === 0 ? 'today' : ''} ${hours === 0 ? 'free' : ''} ${doneToday ? 'done' : ''}">
         <span class="week-strip-day">${i === 0 ? 'Vandaag' : dayShort[d.getDay()] + ' ' + d.getDate()}</span>
-        <span class="week-strip-hours">${hours > 0 ? fmtHours(hours).replace(' uur', '') + 'u' : 'vrij'}</span>
+        <span class="week-strip-hours">${label}</span>
       </div>`);
   }
   return `<div class="week-strip">${cells.join('')}</div>`;
@@ -2967,7 +2971,7 @@ function renderPlanScheduleView(plan, sched) {
   return `
     ${editBar}
     ${unschedBanner}
-    ${renderWeekStrip(sched)}
+    ${renderWeekStrip(sched, plan)}
     <div class="plan-schedule">
       ${shownDays.map(d => {
         const isToday = +d.date === +today0;
