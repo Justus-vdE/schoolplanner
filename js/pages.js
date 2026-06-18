@@ -2827,14 +2827,15 @@ function renderTaskRow(plan, t) {
   const s = subjects[t.subject];
   const done = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
   const pct = t.hours > 0 ? Math.round((done / t.hours) * 100) : 0;
-  const isDone = pct >= 100;
+  const passed = subjectTestPassed(plan, t.subject); // toets al geweest?
+  const isDone = pct >= 100 || passed;
   return `
-    <div class="plan-task ${isDone ? 'done' : ''}">
+    <div class="plan-task ${isDone ? 'done' : ''} ${passed ? 'test-passed' : ''}">
       <div class="plan-task-top">
         <span class="schedule-dot" style="background:${s ? s.color : 'var(--gray-300)'}"></span>
         <div class="plan-task-info">
-          <div class="plan-task-title ${isDone ? 'done' : ''}">${t.priority ? '<span class="prio-star" title="Eerder doen">★</span> ' : ''}${esc(t.title)}</div>
-          <div class="plan-task-sub">${s ? s.name : 'Algemeen'} · ${fmtHours(done)} / ${fmtHours(t.hours)}${t.prefDay != null ? ` · 📅 ${prefDayFull[t.prefDay]}` : ''}</div>
+          <div class="plan-task-title ${isDone ? 'done' : ''}">${t.priority && !passed ? '<span class="prio-star" title="Eerder doen">★</span> ' : ''}${esc(t.title)}</div>
+          <div class="plan-task-sub">${s ? s.name : 'Algemeen'} · ${passed ? '<strong>✓ toets gehad</strong>' : `${fmtHours(done)} / ${fmtHours(t.hours)}${t.prefDay != null ? ` · 📅 ${prefDayFull[t.prefDay]}` : ''}`}</div>
         </div>
         <div class="plan-task-actions">
           <button class="lesson-action-btn prio-btn ${t.priority ? 'on' : ''}" onclick="toggleTaskPriority(${plan.id},${t.id})" title="${t.priority ? 'Niet meer eerder doen' : 'Eerder doen'}">${t.priority ? '★' : '☆'}</button>
@@ -3131,11 +3132,12 @@ function addToDay(e, planId, key) {
 function subjectStats(plan, key) {
   const tasks = plan.tasks.filter(t => t.subject === key);
   const totalH = tasks.reduce((a, t) => a + Math.max(0, t.hours || 0), 0);
-  const doneH = tasks.reduce((a, t) => a + Math.min(t.hours || 0, Math.max(0, t.hoursDone || 0)), 0);
-  const remaining = tasks.filter(t => !(t.hoursDone >= t.hours)).length;
-  const pct = totalH > 0 ? Math.round((doneH / totalH) * 100) : 0;
+  const passed = subjectTestPassed(plan, key); // toets al geweest?
+  const doneH = passed ? totalH : tasks.reduce((a, t) => a + Math.min(t.hours || 0, Math.max(0, t.hoursDone || 0)), 0);
+  const remaining = passed ? 0 : tasks.filter(t => !(t.hoursDone >= t.hours)).length;
+  const pct = passed ? 100 : (totalH > 0 ? Math.round((doneH / totalH) * 100) : 0);
   const exam = (plan.exams || []).filter(e => e.subject === key).sort((a, b) => new Date(a.date) - new Date(b.date))[0];
-  return { tasks, totalH, doneH, remaining, pct, exam };
+  return { tasks, totalH, doneH, remaining, pct, exam, passed };
 }
 
 function renderSubjectOverview(plan) {
@@ -3163,11 +3165,11 @@ function renderSubjectOverview(plan) {
           const st = subjectStats(plan, k);
           const done = st.totalH > 0 && st.remaining === 0;
           return `
-            <button class="subject-ov-card" onclick="openSubjectModal(${plan.id},'${k}')" style="border-left-color:${s.color}">
+            <button class="subject-ov-card ${st.passed ? 'test-passed' : ''}" onclick="openSubjectModal(${plan.id},'${k}')" style="border-left-color:${s.color}">
               <div class="subject-ov-head">${s.icon} ${s.name}</div>
               <div class="subject-ov-meta">${st.exam ? `${icon('fileText', 11)} toets ${formatDateShort(new Date(st.exam.date))}` : 'geen toetsdatum'}</div>
-              <div class="subject-ov-status ${done ? 'done' : ''}">
-                ${st.totalH === 0 ? 'nog geen stof' : done ? '✓ helemaal klaar' : `${st.pct}% af · ${st.remaining} te doen · ${fmtHours(st.totalH - st.doneH)}`}
+              <div class="subject-ov-status ${done || st.passed ? 'done' : ''}">
+                ${st.passed ? '✓ toets gehad — klaar' : st.totalH === 0 ? 'nog geen stof' : done ? '✓ helemaal klaar' : `${st.pct}% af · ${st.remaining} te doen · ${fmtHours(st.totalH - st.doneH)}`}
               </div>
               <div class="subject-ov-bar-row">
                 <div class="plan-task-bar"><div class="plan-task-bar-fill" style="width:${st.pct}%;background:${s.color}"></div></div>

@@ -18,7 +18,8 @@
       "Bash(sed -i '' 's/\\\\.css?v=28/.css?v=29/; s/\\\\.js?v=28/.js?v=29/g' index.html)",
       "Bash(sed -i '' 's/\\\\.css?v=29/.css?v=30/; s/\\\\.js?v=29/.js?v=30/g' index.html)",
       "Bash(sed -i '' 's/\\\\.css?v=30/.css?v=31/; s/\\\\.js?v=30/.js?v=31/g' index.html)",
-      "Bash(sed -i '' 's/\\\\.css?v=31/.css?v=32/; s/\\\\.js?v=31/.js?v=32/g' index.html)"
+      "Bash(sed -i '' 's/\\\\.css?v=31/.css?v=32/; s/\\\\.js?v=31/.js?v=32/g' index.html)",
+      "Bash(sed -i '' 's/\\\\.css?v=32/.css?v=33/; s/\\\\.js?v=32/.js?v=33/g' index.html)"
     ]
   }
 }

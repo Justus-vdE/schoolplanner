@@ -971,9 +971,31 @@ function syncPlanExamDate(plan) {
   }
 }
 
+// De LAATSTE toets/examen — bepaalt hoe ver de planning doorloopt (door de hele
+// toetsweek heen), terwijl planExamDate (de vroegste) "je volgende toets" blijft.
+function planLastExamDate(plan) {
+  if (plan.exams && plan.exams.length) {
+    return startOfDay(new Date(Math.max(...plan.exams.map(e => +new Date(e.date)))));
+  }
+  return startOfDay(new Date(plan.examDate));
+}
+
 function planDeadline(plan) {
-  // De dag waarop alles klaar moet zijn = examendatum minus 'readyDaysBefore'
-  return startOfDay(addDays(planExamDate(plan), -(plan.readyDaysBefore || 0)));
+  // Tot wanneer er nog gepland wordt: tot je laatste toets (minus 'readyDaysBefore'
+  // als dat nog ná vandaag valt). Zo loopt de planner gewoon door de toetsweek heen.
+  const last = planLastExamDate(plan);
+  const ready = startOfDay(addDays(last, -(plan.readyDaysBefore || 0)));
+  const today0 = startOfDay(today);
+  return ready < today0 ? last : ready;
+}
+
+// Is de toets/het examen van dit vak al geweest? Dan hoeft er niks meer voor
+// gedaan te worden — geen studietijd meer, en het telt niet als achterstand.
+function subjectTestPassed(plan, subject) {
+  if (!plan.exams || !plan.exams.length) return false;
+  const dates = plan.exams.filter(e => e.subject === subject).map(e => +startOfDay(new Date(e.date)));
+  if (!dates.length) return false;
+  return Math.max(...dates) < +startOfDay(today);
 }
 
 function availabilityFor(plan, d) {
@@ -1045,6 +1067,7 @@ function buildSchedule(plan) {
     });
     // Hoeveel uur is er nog niet ingepland?
     plan.tasks.forEach(t => {
+      if (subjectTestPassed(plan, t.subject)) return; // toets gehad → niks meer nodig
       let planned = 0;
       Object.values(plan.manualSchedule).forEach(arr => arr.forEach(a => { if (a.taskId === t.id) planned += a.hours; }));
       const need = Math.max(0, (t.hours || 0) - Math.max(0, t.hoursDone || 0));
@@ -1058,7 +1081,8 @@ function buildSchedule(plan) {
         rem: Math.max(0, (t.hours || 0) - Math.max(0, t.hoursDone || 0)),
         due: taskDue(plan, t, deadline),
       }))
-      .filter(i => i.rem > 0.0001)
+      // Vakken waarvan de toets al is geweest vallen weg uit de planning.
+      .filter(i => i.rem > 0.0001 && !subjectTestPassed(plan, i.task.subject))
       .sort((a, b) => a.due - b.due);
 
     // Eén assignment per taak per dag (uren optellen)
