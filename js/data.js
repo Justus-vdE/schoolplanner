@@ -991,11 +991,21 @@ function planDeadline(plan) {
 
 // Is de toets/het examen van dit vak al geweest? Dan hoeft er niks meer voor
 // gedaan te worden — geen studietijd meer, en het telt niet als achterstand.
+// Mét tijd ingevuld → het vak valt weg ná die tijd op de toetsdag zelf.
+// Zónder tijd → pas de dag erna.
 function subjectTestPassed(plan, subject) {
   if (!plan.exams || !plan.exams.length) return false;
-  const dates = plan.exams.filter(e => e.subject === subject).map(e => +startOfDay(new Date(e.date)));
-  if (!dates.length) return false;
-  return Math.max(...dates) < +startOfDay(today);
+  const exams = plan.exams.filter(e => e.subject === subject);
+  if (!exams.length) return false;
+  // De laatste toets van dit vak bepaalt of het vak klaar is.
+  const last = exams.reduce((a, b) => (+new Date(a.date) >= +new Date(b.date) ? a : b));
+  const d = new Date(last.date);
+  if (last.time && /^\d{1,2}:\d{2}$/.test(last.time)) {
+    const [h, m] = last.time.split(':').map(Number);
+    const moment = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+    return Date.now() > +moment; // na de ingevulde tijd
+  }
+  return +startOfDay(d) < +startOfDay(today); // geen tijd → de dag erna
 }
 
 function availabilityFor(plan, d) {
