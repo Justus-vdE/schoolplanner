@@ -3002,12 +3002,21 @@ function renderPlanScheduleView(plan, sched) {
   // In handmatige modus tonen we alle dagen vanaf vandaag (ook lege, om aan toe te voegen)
   const shownDays = manual ? sched.days.filter(d => d.date >= today0) : daysWithWork;
 
+  // Beperk de dag-voor-dag lijst tot de week die je in de weekbalk bekijkt.
+  const weekBase = addDays(today0, weekStripOffset * 7);
+  const weekEnd = addDays(weekBase, 7);
+  const weekDays = shownDays.filter(d => d.date >= weekBase && d.date < weekEnd);
+  const weekEmpty = weekStripOffset === 0
+    ? 'Niets te doen deze week. 🎉'
+    : 'Geen taken in deze week — gebruik ‹ om terug te gaan.';
+
   return `
     ${editBar}
     ${unschedBanner}
     ${renderWeekStrip(sched, plan)}
+    ${weekDays.length === 0 ? `<div class="empty-state empty-state-compact"><p>${weekEmpty}</p></div>` : ''}
     <div class="plan-schedule">
-      ${shownDays.map(d => {
+      ${weekDays.map(d => {
         const isToday = +d.date === +today0;
         const isPast = d.date < today0;
         const useTimed = d.timed && d.timed.length && !manual;
