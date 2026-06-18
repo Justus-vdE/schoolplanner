@@ -2913,6 +2913,13 @@ function renderAvailabilityRows(plan) {
 }
 
 // Compacte weekbalk: geplande uren per dag voor de komende 7 dagen
+// Toetsen/examens die op een bepaalde dag vallen.
+function examsOnDate(plan, date) {
+  if (!plan.exams) return [];
+  const k = +startOfDay(date);
+  return plan.exams.filter(e => +startOfDay(new Date(e.date)) === k);
+}
+
 let weekStripOffset = 0; // 0 = deze week, 1 = volgende week, enz.
 
 function weekStripNav(delta) {
@@ -2934,11 +2941,16 @@ function renderWeekStrip(sched, plan) {
     const hours = day ? day.used : 0;
     // Vandaag niets meer te doen, maar je hebt wel al uren gestudeerd? → "klaar"
     const doneToday = isToday && hours === 0 && loggedToday > 0.05;
+    const exams = examsOnDate(plan, d);
     const label = hours > 0 ? fmtHours(hours).replace(' uur', '') + 'u' : (doneToday ? '✓ klaar' : 'vrij');
+    const examMark = exams.length
+      ? `<span class="week-strip-exam" title="${exams.map(e => esc((subjects[e.subject] && subjects[e.subject].name) || 'Toets')).join(', ')}">📝</span>`
+      : '';
     cells.push(`
-      <div class="week-strip-cell ${isToday ? 'today' : ''} ${hours === 0 ? 'free' : ''} ${doneToday ? 'done' : ''}">
+      <div class="week-strip-cell ${isToday ? 'today' : ''} ${hours === 0 ? 'free' : ''} ${doneToday ? 'done' : ''} ${exams.length ? 'has-exam' : ''}">
         <span class="week-strip-day">${isToday ? 'Vandaag' : dayShort[d.getDay()] + ' ' + d.getDate()}</span>
         <span class="week-strip-hours">${label}</span>
+        ${examMark}
       </div>`);
   }
   const end = addDays(base, 6);
@@ -3003,9 +3015,13 @@ function renderPlanScheduleView(plan, sched) {
   const shownDays = manual ? sched.days.filter(d => d.date >= today0) : daysWithWork;
 
   // Beperk de dag-voor-dag lijst tot de week die je in de weekbalk bekijkt.
+  // Toetsdagen tonen we ook als er die dag niks te leren valt.
   const weekBase = addDays(today0, weekStripOffset * 7);
   const weekEnd = addDays(weekBase, 7);
-  const weekDays = shownDays.filter(d => d.date >= weekBase && d.date < weekEnd);
+  const inWeek = d => d.date >= weekBase && d.date < weekEnd;
+  const weekDays = sched.days.filter(d => inWeek(d) && (
+    d.assignments.length > 0 || (manual && d.date >= today0) || examsOnDate(plan, d.date).length
+  ));
   const weekEmpty = weekStripOffset === 0
     ? 'Niets te doen deze week. 🎉'
     : 'Geen taken in deze week — gebruik ‹ om terug te gaan.';
@@ -3028,6 +3044,10 @@ function renderPlanScheduleView(plan, sched) {
               <span class="plan-schedule-total">${d.used > 0 ? fmtHours(d.used) : ''}</span>
               ${manual ? `<button class="schedule-add-btn" onclick="openAddToDayModal(${plan.id},'${d.key}')" title="Taak op deze dag">${icon('plus', 13)}</button>` : ''}
             </div>
+            ${examsOnDate(plan, d.date).map(e => {
+              const es = subjects[e.subject];
+              return `<div class="plan-schedule-exam">📝 Toets: <strong>${es ? es.name : 'Onbekend vak'}</strong>${e.time ? ` om ${e.time}` : ''}${e.title ? ` — ${esc(e.title)}` : ''}</div>`;
+            }).join('')}
             <div class="plan-schedule-items">
               ${d.assignments.length === 0 && manual ? '<div class="plan-schedule-empty">— vrij —</div>' : ''}
               ${useTimed ? d.timed.map(a => {
