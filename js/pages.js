@@ -2913,25 +2913,46 @@ function renderAvailabilityRows(plan) {
 }
 
 // Compacte weekbalk: geplande uren per dag voor de komende 7 dagen
+let weekStripOffset = 0; // 0 = deze week, 1 = volgende week, enz.
+
+function weekStripNav(delta) {
+  weekStripOffset = Math.max(0, weekStripOffset + delta);
+  renderPage('planner');
+}
+
 function renderWeekStrip(sched, plan) {
   const today0 = startOfDay(today);
   const dayShort = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
   const loggedToday = (plan && plan.dailyLogged && plan.dailyLogged[dateKey(today0)]) || 0;
+  const base = addDays(today0, weekStripOffset * 7);
+  const deadline = planDeadline(plan);
   const cells = [];
   for (let i = 0; i < 7; i++) {
-    const d = addDays(today0, i);
+    const d = addDays(base, i);
+    const isToday = +d === +today0;
     const day = sched.days.find(x => +x.date === +d);
     const hours = day ? day.used : 0;
     // Vandaag niets meer te doen, maar je hebt wel al uren gestudeerd? → "klaar"
-    const doneToday = i === 0 && hours === 0 && loggedToday > 0.05;
+    const doneToday = isToday && hours === 0 && loggedToday > 0.05;
     const label = hours > 0 ? fmtHours(hours).replace(' uur', '') + 'u' : (doneToday ? '✓ klaar' : 'vrij');
     cells.push(`
-      <div class="week-strip-cell ${i === 0 ? 'today' : ''} ${hours === 0 ? 'free' : ''} ${doneToday ? 'done' : ''}">
-        <span class="week-strip-day">${i === 0 ? 'Vandaag' : dayShort[d.getDay()] + ' ' + d.getDate()}</span>
+      <div class="week-strip-cell ${isToday ? 'today' : ''} ${hours === 0 ? 'free' : ''} ${doneToday ? 'done' : ''}">
+        <span class="week-strip-day">${isToday ? 'Vandaag' : dayShort[d.getDay()] + ' ' + d.getDate()}</span>
         <span class="week-strip-hours">${label}</span>
       </div>`);
   }
-  return `<div class="week-strip">${cells.join('')}</div>`;
+  const end = addDays(base, 6);
+  const title = weekStripOffset === 0
+    ? 'Deze week'
+    : `${base.getDate()}/${base.getMonth() + 1} – ${end.getDate()}/${end.getMonth() + 1}`;
+  const nextDisabled = +base > +deadline; // niet voorbij je laatste toets
+  return `
+    <div class="week-strip-nav">
+      <button class="week-nav-btn" onclick="weekStripNav(-1)" ${weekStripOffset === 0 ? 'disabled' : ''} title="Vorige week">‹</button>
+      <span class="week-strip-title">${title}</span>
+      <button class="week-nav-btn" onclick="weekStripNav(1)" ${nextDisabled ? 'disabled' : ''} title="Volgende week">›</button>
+    </div>
+    <div class="week-strip">${cells.join('')}</div>`;
 }
 
 // Gekleurd vaklabel voor een schema-item (duidelijker dan alleen een bolletje)

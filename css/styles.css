@@ -2848,6 +2848,25 @@ a { color: inherit; text-decoration: none; }
 }
 .week-strip-cell.today { border-color: var(--accent); background: var(--accent-light); }
 .week-strip-cell.free { opacity: 0.55; }
+.week-strip-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.week-strip-title { font-size: 0.85rem; font-weight: 600; color: var(--gray-700); }
+.week-nav-btn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--gray-200);
+  background: var(--white);
+  border-radius: 8px;
+  font-size: 1.1rem; line-height: 1;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+.week-nav-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.week-nav-btn:disabled { opacity: 0.35; cursor: default; }
 .plan-task.test-passed { opacity: 0.6; }
 .subject-ov-card.test-passed { opacity: 0.65; }
 .week-strip-cell.done { opacity: 1; border-color: var(--accent); }
