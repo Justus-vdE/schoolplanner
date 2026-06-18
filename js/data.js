@@ -1026,7 +1026,10 @@ function taskDue(plan, task, deadline) {
       .map(e => startOfDay(new Date(e.date)))
       .sort((a, b) => a - b);
     if (examDates.length) {
-      const d = startOfDay(addDays(examDates[0], -1));
+      // Standaard: klaar de dag vóór de toets. Met 'studyOnExamDay' mag je
+      // ook op de toetsdag zelf nog leren (tot en met die dag).
+      const offset = plan.studyOnExamDay ? 0 : -1;
+      const d = startOfDay(addDays(examDates[0], offset));
       return d < deadline ? d : deadline;
     }
   }

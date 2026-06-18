@@ -2713,6 +2713,14 @@ function selectPlan(id) {
   renderPage('planner');
 }
 
+function toggleStudyOnExamDay(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  p.studyOnExamDay = !p.studyOnExamDay;
+  savePlans();
+  renderPage('planner');
+}
+
 function renderPlanDetail(plan) {
   const st = planStatus(plan);
   const lbl = statusLabel(st);
@@ -2956,7 +2964,11 @@ function renderPlanScheduleView(plan, sched) {
            <button class="btn btn-outline btn-sm" onclick="resetSchedule(${plan.id})">&#8635; Herstel automatisch</button>`
         : `<span class="schedule-mode auto">&#10024; Automatisch ingedeeld</span>
            <button class="btn btn-outline btn-sm" onclick="enterManualSchedule(${plan.id})">${icon('settings', 13)} Schema aanpassen</button>`}
-    </div>`;
+    </div>
+    <label class="exam-day-toggle" title="Mag de planner ook op de toetsdag zelf nog leertijd inplannen?">
+      <input type="checkbox" ${plan.studyOnExamDay ? 'checked' : ''} onchange="toggleStudyOnExamDay(${plan.id})">
+      Op de toetsdag zelf nog leren
+    </label>`;
 
   if (daysWithWork.length === 0 && !manual) {
     return editBar + '<div class="empty-state empty-state-compact"><p>Voeg taken en beschikbare tijd toe — dan verschijnt hier je dagindeling.</p></div>';
