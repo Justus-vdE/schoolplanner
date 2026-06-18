@@ -2858,6 +2858,26 @@ a { color: inherit; text-decoration: none; }
 .week-strip-cell { position: relative; }
 .week-strip-cell.has-exam { border-color: #F59E0B; }
 .week-strip-exam { position: absolute; top: 2px; right: 4px; font-size: 0.7rem; }
+.day-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+.day-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--gray-100);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.day-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.day-progress-text { font-size: 0.74rem; font-weight: 600; color: var(--gray-500); white-space: nowrap; }
 .plan-schedule-exam {
   display: flex;
   align-items: center;

@@ -3044,6 +3044,17 @@ function renderPlanScheduleView(plan, sched) {
               <span class="plan-schedule-total">${d.used > 0 ? fmtHours(d.used) : ''}</span>
               ${manual ? `<button class="schedule-add-btn" onclick="openAddToDayModal(${plan.id},'${d.key}')" title="Taak op deze dag">${icon('plus', 13)}</button>` : ''}
             </div>
+            ${(() => {
+              const doneH = (plan.dailyLogged && plan.dailyLogged[d.key]) || 0;
+              if (doneH <= 0.05) return '';
+              const total = doneH + d.used;
+              const pct = total > 0 ? Math.round((doneH / total) * 100) : 100;
+              return `
+                <div class="day-progress">
+                  <div class="day-progress-bar"><div class="day-progress-fill" style="width:${pct}%"></div></div>
+                  <span class="day-progress-text">${fmtHours(doneH)} / ${fmtHours(total)} gedaan</span>
+                </div>`;
+            })()}
             ${examsOnDate(plan, d.date).map(e => {
               const es = subjects[e.subject];
               return `<div class="plan-schedule-exam">📝 Toets: <strong>${es ? es.name : 'Onbekend vak'}</strong>${e.time ? ` om ${e.time}` : ''}${e.title ? ` — ${esc(e.title)}` : ''}</div>`;
