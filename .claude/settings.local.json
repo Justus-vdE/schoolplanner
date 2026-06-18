@@ -24,7 +24,8 @@
       "Bash(sed -i '' 's/\\\\.css?v=34/.css?v=35/; s/\\\\.js?v=34/.js?v=35/g' index.html)",
       "Bash(sed -i '' 's/\\\\.css?v=35/.css?v=36/; s/\\\\.js?v=35/.js?v=36/g' index.html)",
       "Bash(sed -i '' 's/\\\\.css?v=36/.css?v=37/; s/\\\\.js?v=36/.js?v=37/g' index.html)",
-      "Bash(sed -i '' 's/\\\\.css?v=37/.css?v=38/; s/\\\\.js?v=37/.js?v=38/g' index.html)"
+      "Bash(sed -i '' 's/\\\\.css?v=37/.css?v=38/; s/\\\\.js?v=37/.js?v=38/g' index.html)",
+      "Bash(sed -i '' 's/\\\\.css?v=38/.css?v=39/; s/\\\\.js?v=38/.js?v=39/g' index.html)"
     ]
   }
 }

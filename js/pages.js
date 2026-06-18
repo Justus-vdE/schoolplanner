@@ -3068,7 +3068,9 @@ function renderPlanScheduleView(plan, sched) {
                     ${manual ? `
                       <button class="schedule-item-btn" onclick="openMoveBlockModal(${plan.id},'${d.key}',${a.taskId},${a.hours})" title="Verplaatsen">&#8596;</button>
                       <button class="schedule-item-btn delete" onclick="removeFromDay(${plan.id},'${d.key}',${a.taskId})" title="Van deze dag halen">${icons.x}</button>
-                    ` : ''}
+                    ` : `
+                      <button class="schedule-item-btn check" onclick="logTaskHours(${plan.id},${a.taskId},${a.hours})" title="Dit blok afvinken (${fmtHours(a.hours)} gedaan)">${icons.check}</button>
+                    `}
                   </div>`;
               }).join('')}
             </div>
