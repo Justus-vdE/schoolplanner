@@ -3,3 +3,7 @@ node_modules
 out
 .vercel
 .DS_Store
+
+# Swift build-output van de Mac-app (96 MB, hoort niet in git)
+macos/.build
+macos/.swiftpm
