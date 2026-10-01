@@ -3858,3 +3858,12 @@ a { color: inherit; text-decoration: none; }
   max-height: 62vh; overflow-y: auto;
   margin: 0 -4px; padding: 0 4px;
 }
+
+/* "binnenkort"-label op een pro-functie die nog niet aan staat */
+.steer-soon {
+  display: inline-block; margin-left: 4px; padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-light); color: var(--accent-hover);
+  font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  vertical-align: middle;
+}

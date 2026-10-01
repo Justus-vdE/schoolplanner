@@ -3267,7 +3267,8 @@ const steerExamples = ['geen weekend', 'blokken van 25 minuten', 'leren in de av
 
 function renderSteerBar(plan) {
   const rules = steerList(plan);
-  const pro = aiAvailable();
+  // Zichtbaar zodra de AI niet 'off' staat — ook in de etalage-stand 'soon'.
+  const pro = aiVisible() && userPlan === 'pro';
   const prefs = effectivePrefs(plan);
   return `
     <div class="steer-bar">
@@ -3280,9 +3281,9 @@ function renderSteerBar(plan) {
                placeholder="Wat wil je anders? Bijv. &quot;minder wiskunde op maandag&quot;"
                onkeydown="if(event.key==='Enter'){event.preventDefault();steerApply(${plan.id})}">
         <button class="btn btn-primary btn-sm" onclick="steerApply(${plan.id})">Aanpassen</button>
-        ${pro ? `<button class="btn btn-outline btn-sm steer-ai-btn" onclick="steerApply(${plan.id},true)" title="Laat de AI je tekst uitleggen">&#10024; AI</button>` : ''}
+        ${pro ? `<button class="btn btn-outline btn-sm steer-ai-btn" onclick="steerApply(${plan.id},true)" title="${aiComingSoon() ? 'Binnenkort beschikbaar' : 'Laat de AI je tekst uitleggen'}">&#10024; AI${aiComingSoon() ? ' <span class="steer-soon">binnenkort</span>' : ''}</button>` : ''}
       </div>
-      ${pro ? `<button class="steer-tune" onclick="aiTunePlan(${plan.id})">&#10024; Laat de AI mijn planning fijnslijpen</button>` : ''}
+      ${pro ? `<button class="steer-tune" onclick="aiTunePlan(${plan.id})">&#10024; Laat de AI mijn planning fijnslijpen${aiComingSoon() ? ' <span class="steer-soon">binnenkort</span>' : ''}</button>` : ''}
       <div class="steer-hints">
         ${steerExamples.map(h => `<button class="steer-hint" onclick="steerFill(${plan.id},'${h}')">${h}</button>`).join('')}
       </div>
@@ -3294,7 +3295,7 @@ function renderSteerBar(plan) {
             </span>`).join('')}
           <button class="steer-clear" onclick="steerClear(${plan.id})">Alles wissen</button>
         </div>` : ''}
-      ${pro || !aiFeaturesEnabled ? '' : '<div class="steer-note">&#10024; Met pro laat je de AI élke formulering begrijpen.</div>'}
+      ${pro || !aiVisible() ? '' : `<div class="steer-note">&#10024; ${aiComingSoon() ? 'Binnenkort met pro:' : 'Met pro:'} laat de AI élke formulering begrijpen.</div>`}
     </div>`;
 }
 
@@ -3323,9 +3324,10 @@ function steerApply(planId, forceAI) {
     }
   }
   if (aiAvailable()) { steerWithAI(planId, text); return; }
+  if (aiComingSoon() && userPlan === 'pro') { openAiSoonModal(); return; }
   alert('Dat begrijp ik nog niet. Probeer het iets concreter, bijvoorbeeld:\n\n' +
         steerExamples.map(e => '• ' + e).join('\n') +
-        (aiFeaturesEnabled ? '\n\nMet pro laat je de AI elke formulering begrijpen.' : ''));
+        (aiVisible() ? '\n\nMet pro laat je de AI elke formulering begrijpen.' : ''));
 }
 
 function steerRemove(planId, id) {
@@ -3347,6 +3349,22 @@ function steerClear(planId) {
   showToast('Bijsturen gewist ✓');
 }
 
+// Etalage-stand: laat zien wat de AI gaat doen, zonder een aanvraag te
+// versturen. Zo kun je de pro-functie tonen zonder dat het geld kost.
+function openAiSoonModal() {
+  openModal('&#10024; AI-planner', `
+    <p style="margin:0 0 12px">Deze functie komt <strong>binnenkort</strong>. Hij is al gebouwd, maar staat nog uit terwijl we het gebruik netjes afbakenen.</p>
+    <p style="margin:0 0 8px;font-weight:600;font-size:0.88rem">Wat je er straks mee kunt:</p>
+    <ul class="onb-list" style="margin-bottom:14px">
+      <li>Typ in je <strong>eigen woorden</strong> wat je anders wilt &mdash; hoe je het ook formuleert</li>
+      <li>Laat je hele planning <strong>fijnslijpen</strong>: de AI kijkt naar je toetsen, je tijd en welke vakken je moeilijk vindt</li>
+    </ul>
+    <p class="form-hint" style="margin:0 0 14px">Tot die tijd werkt de stuurbalk al zonder AI. Probeer bijvoorbeeld:
+      <strong>${steerExamples.slice(0, 3).map(e => esc(e)).join('</strong>, <strong>')}</strong>.</p>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Duidelijk</button>
+  `);
+}
+
 // Pro: de AI kijkt naar je hele situatie (toetsen, tijd, hoe je leert) en
 // stelt zelf een paar verbeteringen voor. Dat gaat via dezelfde weg als de
 // stuurbalk, dus ook hier bouwt onze eigen code uiteindelijk het schema.
@@ -3354,7 +3372,8 @@ function aiTunePlan(planId) {
   const p = getPlan(planId);
   if (!p) return;
   if (!aiAvailable()) {
-    alert(aiFeaturesEnabled
+    if (aiComingSoon() && userPlan === 'pro') { openAiSoonModal(); return; }
+    alert(aiVisible()
       ? 'Fijnslijpen door de AI is een pro-functie.'
       : 'Fijnslijpen door de AI staat nog uit.');
     return;

@@ -880,20 +880,34 @@ function lessonHourTimes() {
 }
 
 // --- AI-functies (de ✨-knoppen in de stuurbalk) ---
-// Staat UIT tot er twee dingen geregeld zijn in Cloudflare: een secret
-// ANTHROPIC_API_KEY én een limiet op het gebruik. /api/plan is namelijk
-// bereikbaar voor iedereen die de site vindt, en elke aanvraag kost geld.
-// Zolang dit false is, zie je de AI-knoppen niet en werkt de stuurbalk
-// gewoon op de ingebouwde parser ("geen weekend", "blokken van 25 min").
-// Aanzetten = deze regel op true zetten.
-const aiFeaturesEnabled = false;
+// Drie standen, zodat je kunt laten zien wat er komt zonder dat het geld
+// kost. /api/plan is namelijk bereikbaar voor iedereen die de site vindt,
+// en elke aanvraag kost je geld.
+//
+//   'off'  — niets van de AI te zien
+//   'soon' — knoppen zijn te zien; klikken zegt "binnenkort", er gaat géén
+//            aanvraag naar de API. Handig als etalage voor je pro-versie.
+//   'on'   — werkt echt. Zet dit pas aan als er een ANTHROPIC_API_KEY in
+//            Cloudflare staat ÉN er een limiet per gebruiker op zit
+//            (anders kan iedereen op jouw rekening planningen maken).
+const aiMode = 'soon';
 
 // --- Plan (gratis/pro) ---
 let userPlan = localStorage.getItem('sp_user_plan') || 'pro';
 
-// Mag deze gebruiker de AI gebruiken? Alleen als de functie aan staat.
+// Mogen de AI-knoppen überhaupt in beeld komen?
+function aiVisible() {
+  return aiMode !== 'off';
+}
+
+// Doet de AI het echt? Alleen als hij aan staat én je pro hebt.
 function aiAvailable() {
-  return aiFeaturesEnabled && userPlan === 'pro';
+  return aiMode === 'on' && userPlan === 'pro';
+}
+
+// Te zien, maar nog niet beschikbaar.
+function aiComingSoon() {
+  return aiMode === 'soon';
 }
 
 function setUserPlan(plan) {
