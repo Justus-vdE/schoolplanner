@@ -3,6 +3,17 @@
 // van andere websites toestaat (CORS). Alleen Magister-links zijn
 // toegestaan, zodat dit geen open doorgeefluik voor willekeurige sites is.
 export async function onRequest({ request }) {
+  // Alleen onze eigen site mag deze proxy gebruiken (browser-verdediging).
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    try {
+      if (new URL(origin).host !== new URL(request.url).host) {
+        return new Response('Verzoek vanaf een andere site is niet toegestaan.', { status: 403 });
+      }
+    } catch (e) {
+      return new Response('Ongeldige Origin', { status: 403 });
+    }
+  }
   const target = new URL(request.url).searchParams.get('url');
   let u;
   try {
