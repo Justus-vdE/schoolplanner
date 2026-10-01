@@ -41,10 +41,9 @@ function renderPage(page) {
     link.classList.toggle('active', link.dataset.page === page);
   });
 
-  // Update mobile nav active states
-  document.querySelectorAll('.mobile-nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.page === page);
-  });
+  // Mobile nav opnieuw opbouwen (actieve tab + "Meer"-menu sluiten)
+  const mobileNav = document.getElementById('mobile-nav');
+  if (mobileNav) mobileNav.innerHTML = renderMobileNav();
 
   // Behoud scrollpositie bij her-render van dezelfde pagina (bijv. afvinken)
   if (keepScroll) window.scrollTo(0, scrollY);
@@ -106,17 +105,49 @@ function toggleNotifications(e) {
 }
 
 // --- Render Mobile Nav ---
+// Op mobiel tonen we 4 hoofdtabs + een "Meer"-menu voor de rest,
+// zodat de balk niet overvol raakt op smalle schermen.
+const mobileMainPages = ['dashboard', 'planner', 'rooster', 'huiswerk'];
+const mobileMorePages = ['toetsen', 'agenda', 'cijfers', 'instellingen'];
+
 function renderMobileNav() {
-  const items = Object.entries(routes)
-    .filter(([key, route]) => !route.hideNav)
-    .map(([key, route]) => `
+  const item = (key) => {
+    const route = routes[key];
+    return `
     <div class="mobile-nav-item ${currentPage === key ? 'active' : ''}" data-page="${key}" onclick="navigate('${key}')">
       ${icon(route.icon, 22)}
       ${route.title}
-    </div>
-  `).join('');
+    </div>`;
+  };
+  const moreActive = mobileMorePages.includes(currentPage);
+  const moreIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
 
-  return `<div class="mobile-nav-inner">${items}</div>`;
+  return `
+    <div class="mobile-more-sheet" id="mobile-more-sheet">
+      ${mobileMorePages.map(key => `
+        <div class="mobile-more-item ${currentPage === key ? 'active' : ''}" onclick="navigate('${key}')">
+          ${icon(routes[key].icon, 20)}
+          <span>${routes[key].title}</span>
+        </div>`).join('')}
+      <div class="mobile-more-item" onclick="toggleMoreSheet(false);openHelpModal()">
+        <span style="display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center">❓</span>
+        <span>Help</span>
+      </div>
+    </div>
+    <div class="mobile-nav-inner">
+      ${mobileMainPages.map(item).join('')}
+      <div class="mobile-nav-item ${moreActive ? 'active' : ''}" id="mobile-more-btn" onclick="toggleMoreSheet()">
+        <span style="display:inline-flex;width:22px;height:22px">${moreIcon}</span>
+        Meer
+      </div>
+    </div>`;
+}
+
+function toggleMoreSheet(force) {
+  const sheet = document.getElementById('mobile-more-sheet');
+  if (!sheet) return;
+  const open = force != null ? force : !sheet.classList.contains('open');
+  sheet.classList.toggle('open', open);
 }
 
 function showApp() {
@@ -171,6 +202,9 @@ function initApp() {
   // Thema zo vroeg mogelijk toepassen om kort opflikkeren te voorkomen
   applyTheme(getThemePref());
 
+  // In de native Mac-app: eigen styling (navbar als titelbalk)
+  if (window.__nativeMagister) document.documentElement.classList.add('native-mac');
+
   // Load persistent data
   loadSettings();
   loadTodos();
@@ -204,10 +238,11 @@ function initApp() {
     else showOnboarding();
   }
 
-  // Close notification dropdown on outside click
-  document.addEventListener('click', () => {
+  // Close notification dropdown & "Meer"-menu on outside click
+  document.addEventListener('click', (e) => {
     const dropdown = document.getElementById('notification-dropdown');
     if (dropdown) dropdown.classList.remove('open');
+    if (!e.target.closest('#mobile-nav')) toggleMoreSheet(false);
   });
 }
 

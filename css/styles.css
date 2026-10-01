@@ -35,6 +35,16 @@
   color-scheme: light;
 }
 
+/* Vlakken met een vaste donkere navy-achtergrond (navbar, welkomstblok) houden
+   die achtergrond ook in donkere modus, dus daar moet tekst echt wit blijven.
+   Anders wordt var(--white) omgezet naar donker en valt tekst weg. */
+[data-theme="dark"] .navbar-link:hover,
+[data-theme="dark"] .navbar-link.active,
+[data-theme="dark"] .navbar-logo,
+[data-theme="dark"] .welcome-text h1,
+[data-theme="dark"] .welcome-block { color: #F8FAFC; }
+[data-theme="dark"] .navbar-profile-name { color: #C3CDDB; }
+
 /* --- Donkere modus: getinte panelen die anders licht-op-licht worden --- */
 [data-theme="dark"] .plan-status-banner.ahead   { background: #122A1F; border-color: #1F5138; }
 [data-theme="dark"] .plan-status-banner.ontrack { background: #112333; border-color: #1E456A; }
@@ -2591,6 +2601,9 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   margin: 20px 0;
+  /* Elke kaart precies zo hoog als zijn inhoud. Zonder dit worden beide
+     kolommen even hoog en houd je onder de kortste een witte plek over. */
+  align-items: start;
 }
 @media (max-width: 860px) {
   .plan-columns { grid-template-columns: 1fr; }
@@ -2902,6 +2915,12 @@ a { color: inherit; text-decoration: none; }
 }
 .week-nav-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .week-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.plan-warning.catch-up {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.plan-warning.catch-up > div { display: flex; align-items: center; gap: 8px; }
 .plan-task.test-passed { opacity: 0.6; }
 .subject-ov-card.test-passed { opacity: 0.65; }
 .week-strip-cell.done { opacity: 1; border-color: var(--accent); }
@@ -3186,20 +3205,6 @@ a { color: inherit; text-decoration: none; }
 .subject-ov-bar-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .subject-ov-pct { font-size: 0.78rem; font-weight: 700; color: var(--gray-700); min-width: 34px; text-align: right; }
 
-.card-collapse-toggle {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font: inherit;
-}
-.collapse-caret {
-  display: inline-block;
-  font-size: 0.7rem;
-  color: var(--gray-500);
-  transition: transform 0.15s;
-}
-.collapse-caret.open { transform: rotate(90deg); }
 .collapse-count {
   font-size: 0.75rem;
   font-weight: 700;
@@ -3648,3 +3653,208 @@ a { color: inherit; text-decoration: none; }
   transition: var(--transition);
 }
 .add-custom-subject:hover { border-color: var(--accent); color: var(--accent-hover); }
+
+/* ============================================================ */
+/* --- Toast (korte bevestiging onderin) --- */
+/* ============================================================ */
+.app-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(14px);
+  background: var(--navy-900);
+  color: #F1F5F9;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 3000;
+  max-width: 90vw;
+  text-align: center;
+}
+.app-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+[data-theme="dark"] .app-toast {
+  background: #334155;
+  color: #F1F5F9;
+}
+
+/* ============================================================ */
+/* --- Mobiel: "Meer"-menu boven de bottom-nav --- */
+/* ============================================================ */
+.mobile-more-sheet {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 12px;
+  right: 12px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+  box-shadow: 0 -8px 30px rgba(0,0,0,0.18);
+  padding: 8px;
+  display: none;
+}
+.mobile-more-sheet.open {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.mobile-more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--gray-600);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.mobile-more-item:active,
+.mobile-more-item:hover { background: var(--gray-100); }
+.mobile-more-item.active { color: var(--accent); background: var(--gray-100); }
+
+/* Mobiel: iets luchtiger onderin, tabs krijgen gelijke breedte */
+@media (max-width: 768px) {
+  .mobile-nav-inner { justify-content: space-between; }
+  .mobile-nav-item { flex: 1; padding: 8px 4px; }
+  .app-toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ============================================================ */
+/* --- Native Mac-app: navbar fungeert als titelbalk --- */
+/* ============================================================ */
+/* Ruimte voor de stoplicht-knoppen (het venster heeft geen eigen titelbalk) */
+.native-mac .navbar { padding-left: 86px; }
+/* In de Mac-app is de bottom-nav nooit nodig, ook niet bij een smal venster */
+.native-mac .mobile-nav { display: none !important; }
+.native-mac .main-content { padding-bottom: 24px !important; }
+/* Benut de ruimte van een breed Mac-venster */
+.native-mac .container { max-width: 1320px; }
+/* Toast onderin blijft op desktop-positie */
+.native-mac .app-toast { bottom: 28px !important; }
+/* Geen tekst-selectie op knoppen/nav — voelt native */
+.native-mac .navbar, .native-mac .mobile-nav, .native-mac .btn,
+.native-mac .navbar-link, .native-mac .day-tab { -webkit-user-select: none; user-select: none; }
+
+/* ============================================================ */
+/* --- Vragen in "Maak mijn planning" + de stuurbalk --- */
+/* ============================================================ */
+.gen-section-title {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--gray-500);
+  margin: 20px 0 4px; padding-top: 14px; border-top: 1px solid var(--gray-200);
+}
+.gen-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.gen-chip {
+  border: 1px solid var(--gray-300); background: var(--white); color: var(--gray-600);
+  border-radius: var(--radius-full); padding: 6px 12px;
+  font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: var(--transition);
+}
+.gen-chip:hover { border-color: var(--gray-400); color: var(--gray-800); }
+.gen-chip.on { background: var(--navy-900); border-color: var(--navy-900); color: var(--white); }
+
+/* --- Stuurbalk onder je schema --- */
+.steer-bar {
+  background: var(--gray-50); border: 1px solid var(--gray-200);
+  border-radius: var(--radius); padding: 12px; margin-bottom: 14px;
+}
+.steer-head {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  font-size: 0.82rem; font-weight: 700; color: var(--gray-700); margin-bottom: 8px;
+}
+.steer-sub { font-weight: 500; color: var(--gray-500); font-size: 0.76rem; }
+.steer-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.steer-input { flex: 1; min-width: 180px; }
+.steer-row .btn { flex-shrink: 0; }
+.steer-ai-btn { white-space: nowrap; }
+.steer-hints { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.steer-hint {
+  border: 1px dashed var(--gray-300); background: transparent; color: var(--gray-500);
+  border-radius: var(--radius-full); padding: 3px 10px;
+  font-size: 0.74rem; cursor: pointer; transition: var(--transition);
+}
+.steer-hint:hover { border-style: solid; border-color: var(--gray-400); color: var(--gray-700); }
+.steer-chips {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-200);
+}
+.steer-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--accent-light); color: var(--accent-hover);
+  border-radius: var(--radius-full); padding: 4px 6px 4px 11px;
+  font-size: 0.78rem; font-weight: 600;
+}
+.steer-chip button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; padding: 0;
+  border: none; border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.08); color: inherit; cursor: pointer;
+}
+.steer-chip button:hover { background: rgba(0, 0, 0, 0.18); }
+.steer-chip button svg { width: 10px; height: 10px; }
+.steer-clear {
+  border: none; background: transparent; color: var(--gray-500);
+  font-size: 0.75rem; text-decoration: underline; cursor: pointer; padding: 2px 4px;
+}
+.steer-clear:hover { color: #EF4444; }
+.steer-note { margin-top: 8px; font-size: 0.74rem; color: var(--gray-500); }
+
+/* --- Pauze tussen twee leerblokken --- */
+.plan-schedule-break {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.78rem; color: var(--gray-400);
+  padding: 3px 0 3px 10px; margin: 1px 0;
+  border-left: 2px dashed var(--gray-300);
+}
+
+@media (max-width: 480px) {
+  .steer-row .btn { flex: 1; justify-content: center; }
+}
+.steer-tune {
+  display: block; width: 100%; margin-top: 8px; padding: 7px 10px;
+  border: 1px dashed var(--gray-300); border-radius: var(--radius);
+  background: transparent; color: var(--gray-600);
+  font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: var(--transition);
+}
+.steer-tune:hover { border-style: solid; border-color: var(--accent); color: var(--accent-hover); }
+
+/* ============================================================ */
+/* --- "Wat moet je doen": korte lijst + groot venster --- */
+/* ============================================================ */
+/* De kaarttitel is een knop die de volledige lijst groot opent */
+.card-open-big {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: none; padding: 0;
+  font: inherit; color: inherit; cursor: pointer; text-align: left;
+}
+.card-open-big:hover { color: var(--accent-hover); }
+
+.tasks-more-btn {
+  display: block; width: 100%; margin-top: 8px; padding: 9px 10px;
+  border: 1px dashed var(--gray-300); border-radius: var(--radius);
+  background: transparent; color: var(--gray-600);
+  font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: var(--transition);
+}
+.tasks-more-btn:hover { border-style: solid; border-color: var(--accent); color: var(--accent-hover); }
+
+/* Breed venster voor lijsten met veel knoppen per regel */
+.modal.modal-wide { max-width: 760px; }
+
+.tasks-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+  font-size: 0.82rem; font-weight: 600; color: var(--gray-500);
+}
+/* De lijst schuift binnen het venster, dus de pagina eronder blijft kort */
+.tasks-modal-list {
+  max-height: 62vh; overflow-y: auto;
+  margin: 0 -4px; padding: 0 4px;
+}

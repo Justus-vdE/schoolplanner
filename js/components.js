@@ -82,7 +82,7 @@ function renderCheckbox(checked, dataId, dataType) {
 function renderSubjectBadge(subjectId) {
   const s = subjects[subjectId];
   if (!s) return '';
-  return `<span class="hw-subject-badge" style="background:${s.light};color:${s.color}">${s.name}</span>`;
+  return `<span class="hw-subject-badge" style="background:${s.light};color:${s.color}">${esc(s.name)}</span>`;
 }
 
 // --- Due Text ---
@@ -181,10 +181,11 @@ function navigateMiniCalendar(delta) {
 }
 
 // --- Modal ---
-function openModal(title, bodyHtml) {
+// extraClass: optioneel, bv. 'modal-wide' voor een breed venster.
+function openModal(title, bodyHtml, extraClass) {
   const overlay = document.getElementById('modal-overlay');
   overlay.innerHTML = `
-    <div class="modal">
+    <div class="modal ${extraClass || ''}">
       <div class="modal-header">
         <h3>${title}</h3>
         <button class="modal-close" onclick="closeModal()">${icons.x}</button>
@@ -198,6 +199,24 @@ function openModal(title, bodyHtml) {
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
+  // Zo weet de takenlijst dat het grote venster dicht is.
+  if (typeof tasksModalPlanId !== 'undefined') tasksModalPlanId = null;
+}
+
+// --- Toast (korte bevestiging onderin, vervangt alert voor feedback) ---
+let toastTimer = null;
+function showToast(message) {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    el.className = 'app-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
 
 // --- Notification Dropdown (gegenereerd uit je echte data) ---

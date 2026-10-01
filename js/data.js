@@ -616,7 +616,9 @@ function icsToWeekSchedule(events) {
       return {
         hour: idx + 1,
         time: `${pad(ev.start.getHours())}:${pad(ev.start.getMinutes())} - ${pad(ev.end.getHours())}:${pad(ev.end.getMinutes())}`,
-        subject: subject || summary.slice(0, 30),
+        // Onbekend vak: titel als tekst overnemen, zonder HTML-tekens
+        // (externe agenda-data mag nooit als opmaak in de app belanden).
+        subject: subject || summary.replace(/[<>"'&]/g, '').slice(0, 30),
         room: ev.location || '',
       };
     });
@@ -860,6 +862,7 @@ function updateTeacher(key, value) {
   if (!appSettings.teachers) appSettings.teachers = {};
   appSettings.teachers[key] = value.trim();
   saveSettings();
+  if (typeof showToast === 'function') showToast('Opgeslagen ✓');
 }
 
 // Lesuur-tijden gegenereerd uit de roosterinstellingen (één bron van waarheid)
@@ -956,6 +959,77 @@ function minToTime(m) { m = Math.round(m); return `${String(Math.floor(m / 60)).
 function slotHours(s) { return Math.max(0, timeToMin(s.end) - timeToMin(s.start)) / 60; }
 function daySlots(plan, d) { const k = dateKey(d); return (plan.slots && plan.slots[k]) || []; }
 
+// ============================================================
+// --- Leervoorkeuren & stuurregels ---
+// De antwoorden uit "Maak mijn planning" bepalen HOE je schema eruitziet:
+// hoe lang je per blok werkt, of vakken afwisselen, wanneer je het scherpst
+// bent en op welke dagen je niks kunt. Oudere plannen hebben dit niet; dan
+// gelden de standaarden hieronder.
+// ============================================================
+const defaultPlanPrefs = {
+  blockMinutes: 45,     // lengte van één leerblok
+  breakMinutes: 10,     // pauze tussen twee blokken
+  variety: true,        // nooit twee blokken hetzelfde vak achter elkaar
+  peak: 'any',          // 'morning' | 'afternoon' | 'evening' | 'any'
+  hardSubjects: [],     // vakken die extra tijd en je scherpste blokken krijgen
+  blockedDays: [],      // weekdagen (0=zo ... 6=za) waarop je niet leert
+};
+
+// Starttijd voor dagen zonder eigen tijdblokken, op basis van je topmoment.
+const peakStartTime = { morning: '09:00', afternoon: '14:00', evening: '19:00', any: '16:00' };
+
+const peakLabels = {
+  morning: 'ochtend', afternoon: 'middag', evening: 'avond', any: 'maakt niet uit',
+};
+
+function planPrefs(plan) {
+  const raw = (plan && plan.prefs) || {};
+  const p = { ...defaultPlanPrefs, ...raw };
+  p.blockMinutes = Math.min(180, Math.max(15, Number(p.blockMinutes) || 45));
+  p.breakMinutes = Math.min(60, Math.max(0, Number(p.breakMinutes) || 0));
+  if (!peakStartTime[p.peak]) p.peak = 'any';
+  p.hardSubjects = Array.isArray(p.hardSubjects) ? p.hardSubjects.slice() : [];
+  p.blockedDays = Array.isArray(p.blockedDays) ? p.blockedDays.slice() : [];
+  return p;
+}
+
+// --- Stuurregels (de stuurbalk onder je schema) ---
+// Elke regel is een klein, gecontroleerd object. Vrije tekst wordt eerst
+// omgezet naar zulke regels (lokaal of door de AI); het schema zelf wordt
+// altijd door de code hieronder gebouwd, nooit door tekst van buiten.
+const steerKinds = ['blockDay', 'dayHours', 'subjectDay', 'subjectHours', 'blockMinutes', 'breakMinutes', 'variety', 'peak', 'noWeekend'];
+
+function steerList(plan) {
+  return Array.isArray(plan && plan.steer) ? plan.steer : [];
+}
+
+// Voorkeuren + stuurregels samen: hiermee wordt het schema echt gebouwd.
+function effectivePrefs(plan) {
+  const p = planPrefs(plan);
+  const block = (d) => { if (!p.blockedDays.includes(d)) p.blockedDays.push(d); };
+  steerList(plan).forEach(r => {
+    if (r.kind === 'blockMinutes' && r.minutes) p.blockMinutes = Math.min(180, Math.max(15, r.minutes));
+    else if (r.kind === 'breakMinutes' && r.minutes != null) p.breakMinutes = Math.min(60, Math.max(0, r.minutes));
+    else if (r.kind === 'variety') p.variety = !!r.value;
+    else if (r.kind === 'peak' && peakStartTime[r.value]) p.peak = r.value;
+    else if (r.kind === 'blockDay' && r.day != null) block(r.day);
+    else if (r.kind === 'noWeekend') { block(0); block(6); }
+  });
+  return p;
+}
+
+// Mag dit vak op deze weekdag ingepland worden?
+function steerAllowsSubject(plan, subject, jsDay) {
+  return !steerList(plan).some(r =>
+    r.kind === 'subjectDay' && r.mode === 'avoid' && r.subject === subject && r.day === jsDay);
+}
+
+// Krijgt dit vak voorrang op deze weekdag?
+function steerPrefersSubject(plan, subject, jsDay) {
+  return steerList(plan).some(r =>
+    r.kind === 'subjectDay' && r.mode === 'prefer' && r.subject === subject && r.day === jsDay);
+}
+
 // De relevante datum = vroegste examen/toets uit het rooster, anders het losse veld.
 function planExamDate(plan) {
   if (plan.exams && plan.exams.length) {
@@ -1012,9 +1086,19 @@ function availabilityFor(plan, d) {
   // Heb je voor deze dag specifieke tijdblokken ingevuld? Dan tellen die uren.
   const sl = daySlots(plan, d);
   if (sl.length) return sl.reduce((s, b) => s + slotHours(b), 0);
+  const jsDay = new Date(d).getDay();
   const key = dateKey(d);
-  if (plan.availability && plan.availability[key] != null) return plan.availability[key];
-  return plan.defaultDailyHours != null ? plan.defaultDailyHours : 2;
+  // Voor één losse dag zelf uren ingevuld? Die gaan vóór de weekdag-regels.
+  let hours = (plan.availability && plan.availability[key] != null)
+    ? plan.availability[key]
+    : (effectivePrefs(plan).blockedDays.includes(jsDay)
+        ? 0
+        : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2));
+  // Stuurregel "maximaal X uur op maandag" verlaagt het dagbudget.
+  steerList(plan).forEach(r => {
+    if (r.kind === 'dayHours' && r.day === jsDay && r.hours != null) hours = Math.min(hours, Math.max(0, r.hours));
+  });
+  return hours;
 }
 
 // Eigen deadline per taak: de dag vóór de toets van dat vak (als die in het
@@ -1034,6 +1118,207 @@ function taskDue(plan, task, deadline) {
     }
   }
   return deadline;
+}
+
+// ============================================================
+// --- De stuurbalk: vrije tekst omzetten naar stuurregels ---
+// "minder wiskunde op maandag", "geen weekend", "blokken van 25 minuten".
+// Deze parser werkt altijd en offline. Pro-gebruikers kunnen de tekst
+// daarnaast door de AI laten begrijpen (zie steerWithAI in js/pages.js);
+// die geeft exact dezelfde soort regels terug, zodat het schema altijd
+// door onze eigen code gebouwd wordt.
+// ============================================================
+const steerDayNames = {
+  zondag: 0, zo: 0, maandag: 1, ma: 1, dinsdag: 2, di: 2, woensdag: 3, wo: 3,
+  donderdag: 4, do: 4, vrijdag: 5, vr: 5, zaterdag: 6, za: 6,
+};
+const dayLabelsNl = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+
+// Welk vak bedoel je? Eerst de vakken die in dit plan zitten, langste naam
+// eerst ("wiskunde b" vóór "wiskunde"), daarna de afkortingen als los woord.
+function steerFindSubject(text, plan) {
+  const t = ' ' + String(text).toLowerCase() + ' ';
+  const keys = new Set();
+  (plan.exams || []).forEach(e => keys.add(e.subject));
+  (plan.tasks || []).forEach(x => keys.add(x.subject));
+  const candidates = keys.size ? [...keys] : Object.keys(subjects);
+  const byName = candidates
+    .filter(k => subjects[k])
+    .map(k => ({ key: k, name: subjects[k].name.toLowerCase() }))
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const c of byName) if (t.includes(c.name)) return c.key;
+  for (const [abbr, key] of Object.entries(magisterSubjectMap)) {
+    if (!candidates.includes(key)) continue;
+    if (new RegExp('\\b' + abbr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(t)) return key;
+  }
+  return null;
+}
+
+function parseSteerText(text, plan) {
+  const raw = String(text || '').toLowerCase().trim();
+  if (!raw) return [];
+  const rules = [];
+  const add = (r) => { if (!rules.some(x => x.kind === r.kind && x.day === r.day && x.subject === r.subject)) rules.push(r); };
+
+  const negative = /\b(geen|niet|nooit|zonder)\b/.test(raw);
+  const less = /\b(minder|korter|kortere|lichter|rustiger)\b/.test(raw);
+  const more = /\b(meer|langer|langere|extra|zwaarder)\b/.test(raw);
+
+  const days = [];
+  Object.entries(steerDayNames).forEach(([word, d]) => {
+    if (new RegExp('\\b' + word + '\\b').test(raw) && !days.includes(d)) days.push(d);
+  });
+  const subject = steerFindSubject(raw, plan);
+
+  // "niet in het weekend"
+  if (/\bweekend\b/.test(raw) && (negative || less)) add({ kind: 'noWeekend', text: 'Geen weekend' });
+
+  // "max 1 uur op maandag"
+  const cap = raw.match(/\b(?:max(?:imaal)?|hoogstens|niet meer dan)\s*(\d+(?:[.,]\d+)?)\s*(?:u\b|uur)/);
+  if (cap) {
+    const h = parseFloat(cap[1].replace(',', '.'));
+    (days.length ? days : [0, 1, 2, 3, 4, 5, 6]).forEach(d =>
+      add({ kind: 'dayHours', day: d, hours: h, text: `Max ${fmtHours(h)} op ${dayLabelsNl[d]}` }));
+  }
+
+  // Bloklengte & pauzes
+  const mins = raw.match(/\b(\d{2,3})\s*(?:min|minuten)\b/);
+  if (/\bpauze/.test(raw)) {
+    const m = mins ? +mins[1] : (more ? 15 : (less ? 5 : null));
+    if (m != null) add({ kind: 'breakMinutes', minutes: m, text: `Pauzes van ${m} min` });
+  } else if (mins || /\bblok/.test(raw) || /pomodoro/.test(raw)) {
+    const m = /pomodoro/.test(raw) ? 25 : (mins ? +mins[1] : (less ? 25 : (more ? 90 : null)));
+    if (m != null) add({ kind: 'blockMinutes', minutes: m, text: `Blokken van ${m} min` });
+  }
+
+  // Afwisseling
+  if (/\b(per vak|achter elkaar|een vak tegelijk)\b/.test(raw)) {
+    add({ kind: 'variety', value: false, text: 'Per vak doorwerken' });
+  } else if (/afwissel/.test(raw)) {
+    const off = negative || less;
+    add({ kind: 'variety', value: !off, text: off ? 'Minder afwisselen' : 'Meer afwisselen' });
+  }
+
+  // Topmoment — alleen als je het positief vraagt ("leren in de avond")
+  if (!negative) {
+    if (/ochtend|'s morgens|\bmorgens\b/.test(raw)) add({ kind: 'peak', value: 'morning', text: 'Leren in de ochtend' });
+    else if (/middag/.test(raw)) add({ kind: 'peak', value: 'afternoon', text: 'Leren in de middag' });
+    else if (/avond/.test(raw)) add({ kind: 'peak', value: 'evening', text: 'Leren in de avond' });
+  }
+
+  // Vak op een dag wel of juist niet
+  if (subject && days.length) {
+    const avoid = negative || less;
+    days.forEach(d => add({
+      kind: 'subjectDay', subject, day: d, mode: avoid ? 'avoid' : 'prefer',
+      text: `${avoid ? 'Geen' : 'Juist'} ${subjects[subject].name} op ${dayLabelsNl[d]}`,
+    }));
+  } else if (!subject && days.length && (negative || less)) {
+    days.forEach(d => add({ kind: 'blockDay', day: d, text: `Niet leren op ${dayLabelsNl[d]}` }));
+  }
+
+  // Meer of minder tijd voor één vak (past de uren van dat vak aan)
+  if (subject && !days.length && (more || less)) {
+    add({
+      kind: 'subjectHours', subject, factor: more ? 1.3 : 0.7,
+      text: `${more ? 'Meer' : 'Minder'} tijd voor ${subjects[subject].name}`,
+    });
+  }
+  return rules;
+}
+
+// Twee regels die hetzelfde aansturen: de nieuwe vervangt de oude.
+function sameSteerTarget(a, b) {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'subjectDay') return a.subject === b.subject && a.day === b.day;
+  if (a.kind === 'dayHours' || a.kind === 'blockDay') return a.day === b.day;
+  if (a.kind === 'subjectHours') return a.subject === b.subject;
+  return true; // bloklengte, pauze, afwisseling, topmoment, weekend: één per plan
+}
+
+function scaleSubjectHours(plan, subject, factor) {
+  (plan.tasks || []).forEach(t => {
+    if (t.subject !== subject) return;
+    t.hours = Math.max(0.5, Math.round((t.hours || 0) * factor * 2) / 2);
+  });
+}
+
+// Regels toevoegen aan het plan. Alleen bekende soorten komen erin — zo kan
+// een antwoord van de AI nooit iets anders aanzetten dan deze knoppen.
+function applySteerRules(plan, rules) {
+  if (!Array.isArray(plan.steer)) plan.steer = [];
+  let added = 0;
+  (rules || []).forEach(r => {
+    if (!r || !steerKinds.includes(r.kind)) return;
+    if (r.kind === 'subjectHours') {
+      if (!subjects[r.subject] || !r.factor) return;
+      scaleSubjectHours(plan, r.subject, r.factor);
+    }
+    plan.steer = plan.steer.filter(x => !sameSteerTarget(x, r));
+    plan.steer.push({ ...r, id: Date.now() * 1000 + Math.floor(Math.random() * 1000) });
+    added++;
+  });
+  return added;
+}
+
+function removeSteerRule(plan, id) {
+  const r = steerList(plan).find(x => x.id === id);
+  if (!r) return;
+  // Uren-bijstelling terugdraaien, zodat weghalen echt ongedaan maakt
+  if (r.kind === 'subjectHours' && r.factor) scaleSubjectHours(plan, r.subject, 1 / r.factor);
+  plan.steer = steerList(plan).filter(x => x.id !== id);
+}
+
+// Zet de leerblokken van één dag om in concrete tijden, met pauzes ertussen.
+// Heeft de dag eigen tijdblokken? Dan blijven we daarbinnen. Anders beginnen
+// we op het moment dat bij je topmoment past (ochtend/middag/avond).
+function buildDayBlocks(plan, day) {
+  const seq = (day.blocks && day.blocks.length) ? day.blocks : (day.assignments || []);
+  if (!seq.length) return [];
+  const prefs = effectivePrefs(plan);
+  const slots = (day.slots && day.slots.length) ? day.slots : null;
+  const out = [];
+  let si = 0;
+  let cursor = slots ? timeToMin(slots[0].start) : timeToMin(peakStartTime[prefs.peak]);
+
+  // Schuif naar het eerstvolgende tijdblok met ruimte. False = dag is vol.
+  const advance = () => {
+    if (!slots) return true;
+    while (si < slots.length && cursor >= timeToMin(slots[si].end)) {
+      si++;
+      if (si < slots.length) cursor = Math.max(cursor, timeToMin(slots[si].start));
+    }
+    return si < slots.length;
+  };
+  const roomLeft = () => (slots ? timeToMin(slots[si].end) - cursor : Infinity);
+
+  for (let i = 0; i < seq.length; i++) {
+    let rem = Math.round((seq[i].hours || 0) * 60);
+    while (rem > 0.5) {
+      if (!advance()) return out;
+      const use = Math.min(rem, roomLeft());
+      if (use <= 0.5) break;
+      out.push({
+        type: 'study', taskId: seq[i].taskId, subject: seq[i].subject, title: seq[i].title,
+        start: minToTime(cursor), end: minToTime(cursor + use), minutes: use,
+      });
+      cursor += use;
+      rem -= use;
+    }
+    // Pauze tussen twee leerblokken — niet achter het laatste blok van de dag.
+    if (prefs.breakMinutes > 0 && i < seq.length - 1) {
+      if (!advance()) return out;
+      if (roomLeft() >= prefs.breakMinutes) {
+        out.push({
+          type: 'break',
+          start: minToTime(cursor), end: minToTime(cursor + prefs.breakMinutes),
+          minutes: prefs.breakMinutes,
+        });
+        cursor += prefs.breakMinutes;
+      }
+    }
+  }
+  return out;
 }
 
 // Verdeelt de taakuren over de beschikbare dagen vanaf vandaag t/m de
@@ -1057,6 +1342,7 @@ function buildSchedule(plan) {
       slots,
       used: 0,
       assignments: [],
+      blocks: [],
     });
   }
 
@@ -1098,11 +1384,13 @@ function buildSchedule(plan) {
       .filter(i => i.rem > 0.0001 && !subjectTestPassed(plan, i.task.subject))
       .sort((a, b) => a.due - b.due);
 
-    // Eén assignment per taak per dag (uren optellen)
+    // Eén assignment per taak per dag (uren optellen) PLUS de echte
+    // blokvolgorde, zodat het schema kan laten zien dat je afwisselt.
     const place = (day, it, hours) => {
       const ex = day.assignments.find(a => a.taskId === it.task.id);
       if (ex) ex.hours += hours;
       else day.assignments.push({ taskId: it.task.id, subject: it.task.subject, title: it.task.title, hours });
+      day.blocks.push({ taskId: it.task.id, subject: it.task.subject, title: it.task.title, hours });
       day.used += hours;
       it.rem -= hours;
     };
@@ -1138,48 +1426,91 @@ function buildSchedule(plan) {
       }
     }
 
-    // Fase 2: de rest afwisselend (round-robin) over de overgebleven tijd
+    // Fase 2: de rest in BLOKKEN over de overgebleven tijd.
+    //  - standaard: afwisselen. Per blok kiezen we het vak dat die dag nog
+    //    het minst aan bod kwam, en nooit twee keer hetzelfde vak achter
+    //    elkaar. Zo zit je niet drie uur op één vak vast.
+    //  - 'blocked': juist wél doorwerken aan hetzelfde vak, maar nog steeds
+    //    in blokken met pauzes ertussen.
+    const prefs = effectivePrefs(plan);
+    const blockH = prefs.blockMinutes / 60;
+    const hardSet = new Set(prefs.hardSubjects);
+    // Doorwerken aan één vak: via de schakelaar in de bewerk-balk, of doordat
+    // je in de stuurbalk "per vak achter elkaar" hebt gevraagd.
+    const keepTogether = plan.studyOrder === 'blocked' || prefs.variety === false;
+
+    // Eerste toetsdatum per vak: vakken met de eerstvolgende toets gaan voor.
+    const subjDue = {};
+    items.forEach(i => {
+      const cur = subjDue[i.task.subject];
+      subjDue[i.task.subject] = cur != null ? Math.min(cur, i.due) : i.due;
+    });
+
     for (const day of days) {
+      const jsDay = day.date.getDay();
+      const doneToday = {};               // vak -> aantal blokken vandaag
       let free = day.capacity - day.used;
+      let last = null;
       let guard = 0;
-      while (free > 0.0001 && guard++ < 500) {
-        const eligible = items.filter(i => i.rem > 0.0001 && i.due >= day.date);
-        if (!eligible.length) break;
-        let allocated = false;
-        for (const it of eligible) {
-          if (free <= 0.0001) break;
-          const chunk = Math.min(1, it.rem, free);
-          if (chunk <= 0.0001) continue;
-          place(day, it, chunk);
-          free -= chunk;
-          allocated = true;
+      day.assignments.forEach(a => { doneToday[a.subject] = (doneToday[a.subject] || 0) + 1; });
+
+      while (free > 0.0001 && guard++ < 400) {
+        // Alles wat vandaag mag: nog uren over, deadline nog niet voorbij en
+        // niet door een stuurregel van deze dag uitgesloten.
+        let pool = items.filter(i => i.rem > 0.0001 && i.due >= day.date
+          && steerAllowsSubject(plan, i.task.subject, jsDay));
+        if (!pool.length) break;
+
+        if (keepTogether && last) {
+          const same = pool.filter(i => i.task.subject === last);
+          if (same.length) pool = same;
+        } else if (prefs.variety && last) {
+          const other = pool.filter(i => i.task.subject !== last);
+          if (other.length) pool = other;
         }
-        if (!allocated) break;
+
+        pool = pool.slice().sort((a, b) => {
+          // 1. "doe wiskunde op maandag" uit de stuurbalk
+          const pa = steerPrefersSubject(plan, a.task.subject, jsDay) ? 1 : 0;
+          const pb = steerPrefersSubject(plan, b.task.subject, jsDay) ? 1 : 0;
+          if (pa !== pb) return pb - pa;
+          // 2. eerlijk rondgaan: het vak dat vandaag het minst aan bod kwam
+          if (!keepTogether) {
+            const ca = doneToday[a.task.subject] || 0;
+            const cb = doneToday[b.task.subject] || 0;
+            if (ca !== cb) return ca - cb;
+          }
+          // 3. vak met de eerstvolgende toets
+          const sd = subjDue[a.task.subject] - subjDue[b.task.subject];
+          if (sd) return sd;
+          // 4. moeilijke vakken vroeg op de dag, als je het scherpst bent
+          const ha = hardSet.has(a.task.subject) ? 1 : 0;
+          const hb = hardSet.has(b.task.subject) ? 1 : 0;
+          if (ha !== hb) return hb - ha;
+          return a.due - b.due;
+        });
+
+        const it = pool[0];
+        let chunk = Math.min(blockH, it.rem, free);
+        // Een paar losse minuten is geen leerblok. Blijft er na dit blok
+        // minder dan 10 minuten over, plak die er dan bij (dus 55 min in
+        // plaats van 45 + 10); past er niks zinnigs meer, stop dan de dag.
+        const sliver = 10 / 60;
+        if (free - chunk > 0.0001 && free - chunk < sliver) chunk = Math.min(free, it.rem);
+        if (chunk <= 0.0001) break;
+        if (chunk < sliver && chunk < it.rem - 0.0001) break;
+        place(day, it, chunk);
+        doneToday[it.task.subject] = (doneToday[it.task.subject] || 0) + 1;
+        free -= chunk;
+        last = it.task.subject;
       }
     }
     // Wat nergens meer past (vóór de eigen toets/deadline) telt als tekort
     overflow = items.reduce((s, i) => s + i.rem, 0);
   }
 
-  // Voor dagen met tijdblokken: zet de toegewezen uren om in concrete tijdslots.
-  days.forEach(day => {
-    if (!day.slots.length) return;
-    day.timed = [];
-    let bi = 0;
-    let cursor = timeToMin(day.slots[0].start);
-    day.assignments.forEach(a => {
-      let rem = a.hours * 60;
-      while (rem > 0.01 && bi < day.slots.length) {
-        const bEnd = timeToMin(day.slots[bi].end);
-        if (cursor >= bEnd) { bi++; if (bi < day.slots.length) cursor = timeToMin(day.slots[bi].start); continue; }
-        const use = Math.min(bEnd - cursor, rem);
-        day.timed.push({ subject: a.subject, title: a.title, start: minToTime(cursor), end: minToTime(cursor + use) });
-        cursor += use;
-        rem -= use;
-        if (cursor >= bEnd) { bi++; if (bi < day.slots.length) cursor = timeToMin(day.slots[bi].start); }
-      }
-    });
-  });
+  // Zet de blokken van elke dag om in concrete tijden met pauzes ertussen.
+  days.forEach(day => { day.timed = buildDayBlocks(plan, day); });
 
   const totalCapacity = days.reduce((s, d) => s + d.capacity, 0);
   return { days, overflow, unscheduled, manual, totalCapacity };

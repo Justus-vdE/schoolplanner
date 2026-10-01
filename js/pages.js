@@ -7,6 +7,7 @@ function renderDashboard() {
   loadTodos();
   loadHomework();
   loadPlans();
+  loadSchedule();
 
   // Voortgang van je eerstvolgende toetsweek/examen voor de overzichtsbalk
   const dPlan = getDashboardPlan();
@@ -149,13 +150,13 @@ function renderDashboard() {
               </div>
               ${todayLessons.length > 0 ? todayLessons.map(l => {
                 const s = subjects[l.subject] || { name: l.subject, color: '#94A3B8' };
-                const teacher = subjectTeacher(l.subject);
+                const teacher = l.teacher || subjectTeacher(l.subject);
                 return `
                   <div class="schedule-item">
                     <span class="schedule-time">${l.time}</span>
                     <span class="schedule-dot" style="background:${s.color}"></span>
                     <div class="schedule-info">
-                      <div class="schedule-subject">${s.name}</div>
+                      <div class="schedule-subject">${esc(s.name)}</div>
                       ${teacher ? `<div class="schedule-detail">${esc(teacher)}</div>` : ''}
                     </div>
                     <span class="schedule-room">${esc(l.room)}</span>
@@ -179,8 +180,8 @@ function renderDashboard() {
                   <div class="schedule-item">
                     <span class="schedule-dot" style="background:${s.color}"></span>
                     <div class="schedule-info">
-                      <div class="schedule-subject">${s.name}</div>
-                      <div class="schedule-detail">${t.title}</div>
+                      <div class="schedule-subject">${esc(s.name)}</div>
+                      <div class="schedule-detail">${esc(t.title)}</div>
                     </div>
                     <span class="todo-due ${due.urgent ? 'urgent' : ''}">${due.text}</span>
                   </div>
@@ -252,11 +253,17 @@ function renderDashboard() {
 }
 
 // ==================== ROOSTER ====================
+// Weekvolgorde die bij vandaag begint: bv. op vrijdag → [vr, ma, di, wo, do].
+function weekOrder(todayIndex) {
+  return [0, 1, 2, 3, 4].map(k => (todayIndex + k) % 5);
+}
+
 function renderRooster() {
   loadSchedule();
   const jsDay = today.getDay();
   const todayIndex = (jsDay >= 1 && jsDay <= 5) ? jsDay - 1 : 0;
   const dayLabels = ['Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag'];
+  const totalLessons = countLessons();
 
   return `
     <div class="page-content">
@@ -269,6 +276,11 @@ function renderRooster() {
           <button class="btn btn-primary btn-sm" onclick="openAddLessonModal()">
             ${icon('plus', 14)} Les toevoegen
           </button>
+          ${totalLessons > 0 ? `
+          <button class="btn btn-outline btn-sm" style="color:#EF4444;border-color:#FCA5A5" onclick="clearSchedule()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            Rooster leegmaken
+          </button>` : ''}
           <button class="btn ${getMagisterIcsUrl() ? 'btn-magister-connected' : 'btn-magister'} btn-sm" onclick="openMagisterIcsModal()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             ${getMagisterIcsUrl() ? 'Magister gekoppeld' : 'Koppel Magister'}
@@ -276,28 +288,30 @@ function renderRooster() {
         </div>
       </div>
 
+      <!-- Volgorde begint bij vandaag: vandaag staat links vooraan. -->
       <!-- Mobile Day Tabs -->
       <div class="day-tabs" id="day-tabs">
-        ${dayLabels.map((d, i) => `
-          <button class="day-tab ${i === todayIndex ? 'active' : ''}" onclick="switchDay(${i})">${d}</button>
+        ${weekOrder(todayIndex).map((idx, p) => `
+          <button class="day-tab ${p === 0 ? 'active' : ''}" onclick="switchDay(${p})">${dayLabels[idx]}${p === 0 ? ' (vandaag)' : ''}</button>
         `).join('')}
       </div>
 
       <div class="rooster-week" id="rooster-grid">
-        ${dayNames.map((day, i) => {
+        ${weekOrder(todayIndex).map((idx, p) => {
+          const day = dayNames[idx];
           const lessons = schedule[day] || [];
-          const isToday = i === todayIndex;
+          const isToday = p === 0;
           return `
-            <div class="rooster-day ${isToday ? 'active-day' : ''}" data-day="${i}">
-              <div class="rooster-day-header ${isToday ? 'today' : ''}">${dayLabels[i]}</div>
+            <div class="rooster-day ${isToday ? 'active-day' : ''}" data-day="${p}">
+              <div class="rooster-day-header ${isToday ? 'today' : ''}">${dayLabels[idx]}</div>
               <div class="rooster-lessons">
                 ${lessons.map((l, li) => {
                   const s = subjects[l.subject] || { name: l.subject, color: '#94A3B8', light: '#F1F5F9' };
-                  const teacher = subjectTeacher(l.subject);
+                  const teacher = l.teacher || subjectTeacher(l.subject);
                   return `
                     <div class="lesson-block" style="background:${s.light};border-color:${s.color}">
                       <div class="lesson-hour">${l.hour}e uur &middot; ${l.time}</div>
-                      <div class="lesson-subject" style="color:${s.color}">${s.name}</div>
+                      <div class="lesson-subject" style="color:${s.color}">${esc(s.name)}</div>
                       <div class="lesson-detail">${teacher ? `${esc(teacher)} &middot; ` : ''}${esc(l.room)}</div>
                       <div class="lesson-actions">
                         <button class="lesson-action-btn" onclick="event.stopPropagation();openEditLessonModal('${day}',${li})" title="Bewerken">
@@ -432,6 +446,23 @@ function deleteLesson(day, index) {
   renderPage('rooster');
 }
 
+function countLessons() {
+  return dayNames.reduce((n, d) => n + (schedule[d] || []).length, 0);
+}
+
+// Het hele weekrooster in één keer leeg — handig als je toetsweek voorbij is
+// of als je met een nieuw rooster opnieuw wilt beginnen.
+function clearSchedule() {
+  const total = countLessons();
+  if (!total) return;
+  if (!confirm(`Weet je het zeker? Dit verwijdert alle ${total} lessen uit je weekrooster.`)) return;
+  schedule = {};
+  dayNames.forEach(d => { schedule[d] = []; });
+  saveSchedule();
+  renderPage('rooster');
+  showToast('Rooster leeggemaakt ✓');
+}
+
 // --- Magister-rooster koppelen via agenda-link (iCal) ---
 function openMagisterIcsModal() {
   const saved = getMagisterIcsUrl();
@@ -511,6 +542,18 @@ async function importMagisterIcs(useStored) {
 function openMagisterModal(source) {
   const isConnected = magistarConnected;
 
+  // In de Mac-app: rechtstreeks inloggen via het echte Magister-venster,
+  // geen bladwijzer nodig.
+  if (window.__nativeMagister && !isConnected) {
+    openModal('Koppel met Magister', `
+      <div class="connect-modal">
+        <p class="connect-desc">Er opent een echt Magister-venster. <strong>Zoek daar je school</strong> en log normaal in (ook met Microsoft of 2FA). Daarna verschijnen je <strong>cijfers én rooster</strong> hier vanzelf — wij zien je wachtwoord nooit.</p>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" onclick="window.magisterConnect();closeModal();">Log in met Magister</button>
+      </div>
+    `);
+    return;
+  }
+
   openModal('Koppel met Magister', `
     <div class="connect-modal">
       <div class="connect-icon-large">
@@ -525,8 +568,8 @@ function openMagisterModal(source) {
         </div>
         <p class="connect-desc">Je gegevens worden automatisch gesynchroniseerd met Magister.</p>
         <div class="connect-info-box">
-          <div class="connect-info-row"><span>Account</span><strong>${magistarAccount.user || 'Onbekend'}</strong></div>
-          <div class="connect-info-row"><span>School</span><strong>${magistarAccount.school || 'Onbekend'}</strong></div>
+          <div class="connect-info-row"><span>Account</span><strong>${esc(magistarAccount.user || 'Onbekend')}</strong></div>
+          <div class="connect-info-row"><span>School</span><strong>${esc(magistarAccount.school || 'Onbekend')}</strong></div>
           <div class="connect-info-row"><span>Laatst gesync</span><strong>Vandaag, ${new Date().getHours()}:${String(new Date().getMinutes()).padStart(2, '0')}</strong></div>
         </div>
         <button class="btn btn-outline" style="width:100%;justify-content:center;margin-top:12px" onclick="disconnectMagister()">
@@ -573,7 +616,6 @@ function openMagisterModal(source) {
               <label class="form-label">Bearer-token</label>
               <input type="text" class="form-input" id="magister-token" placeholder="Plak hier je token..." required>
             </div>
-            <input type="hidden" id="magister-user"><input type="hidden" id="magister-pass">
             <div id="magister-error" class="magister-error" style="display:none"></div>
             <button type="submit" class="btn btn-primary" id="magister-submit" style="width:100%;justify-content:center;margin-top:8px">Verbinden</button>
           </form>
@@ -599,8 +641,6 @@ function magisterBookmarkletClicked(e) {
 async function connectMagister(e) {
   e.preventDefault();
   const school = document.getElementById('magister-school').value.trim();
-  const user = document.getElementById('magister-user').value.trim();
-  const pass = document.getElementById('magister-pass').value;
   const token = (document.getElementById('magister-token') || {}).value;
   const errEl = document.getElementById('magister-error');
   const btn = document.getElementById('magister-submit');
@@ -615,9 +655,8 @@ async function connectMagister(e) {
   if (btn) { btn.disabled = true; btn.textContent = 'Verbinden...'; }
 
   try {
-    const payload = token && token.trim()
-      ? { action: 'data', school, token: token.trim() }
-      : { action: 'login', school, username: user, password: pass };
+    if (!token || !token.trim()) { showErr('Plak eerst je token.'); return; }
+    const payload = { action: 'data', school, token: token.trim() };
     const res = await fetch('/api/magister', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -632,7 +671,7 @@ async function connectMagister(e) {
 
     // Gelukt: gegevens opslaan en verbinding markeren.
     importMagisterData(data);
-    saveMagisterConnection(true, { school, user: data.account?.naam || user });
+    saveMagisterConnection(true, { school, user: data.account?.naam || 'leerling' });
     closeModal();
     renderPage(currentPage);
   } catch (err) {
@@ -683,11 +722,17 @@ function importMagisterData(data) {
       const subj = detectSubjectKey(a.Vakken[0].Naam);
       const time = `${fmtClock(a.Start)} - ${fmtClock(a.Einde)}`;
       if (fresh[dag].some(l => l.hour === a.LesuurVan && l.time === time)) return;
+      // Docent(en) uit de Magister-afspraak halen (verschillende veldvormen).
+      const docenten = a.Docenten || a.Docent || [];
+      const teacher = Array.isArray(docenten)
+        ? docenten.map(d => d && (d.Naam || d.Docentcode || d.Achternaam)).filter(Boolean).join(', ')
+        : (typeof docenten === 'string' ? docenten : '');
       fresh[dag].push({
         hour: a.LesuurVan || 0,
         time,
         subject: subj || 'overig',
         room: a.Lokatie || (a.Lokalen && a.Lokalen[0] && a.Lokalen[0].Naam) || '',
+        teacher: teacher || '',
       });
       importedLessons++;
     });
@@ -2121,7 +2166,7 @@ function renderInstellingen() {
             <div class="settings-connect-row">
               <div class="settings-connect-info">
                 <strong>Magister</strong>
-                <span class="settings-connect-status ${magistarConnected ? 'active' : ''}">${magistarConnected ? `Verbonden als ${magistarAccount.user || 'onbekend'}` : 'Niet verbonden'}</span>
+                <span class="settings-connect-status ${magistarConnected ? 'active' : ''}">${magistarConnected ? `Verbonden als ${esc(magistarAccount.user || 'onbekend')}` : 'Niet verbonden'}</span>
               </div>
               <button class="btn ${magistarConnected ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="openMagisterModal('instellingen')">
                 ${magistarConnected ? 'Beheren' : 'Verbinden'}
@@ -2169,14 +2214,6 @@ function renderInstellingen() {
             </div>
           </div>
           <div class="settings-section" style="margin-top:20px;border-top:1px solid var(--gray-100);padding-top:20px">
-            <div class="settings-plan-info">
-              <div class="settings-plan-badge">${userPlan === 'pro' ? 'Pro' : userPlan === 'school' ? 'School' : 'Gratis'}</div>
-              <div class="settings-plan-desc">
-                ${userPlan === 'pro' ? 'Je hebt toegang tot alle functies inclusief koppelingen en onbeperkte opslag.' : 'Upgrade naar Pro voor koppelingen en meer functies.'}
-              </div>
-            </div>
-          </div>
-          <div class="settings-section" style="margin-top:20px;border-top:1px solid var(--gray-100);padding-top:20px">
             <div class="settings-toggle-label" style="margin-bottom:4px">&#128190; Back-up</div>
             <div class="settings-toggle-desc" style="margin-bottom:12px">Je gegevens staan in deze browser. Download regelmatig een back-up — die kun je hier (of op een ander apparaat) terugzetten.</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2201,12 +2238,24 @@ function renderInstellingen() {
 }
 
 function updateSetting(key, value) {
+  // Leeg/ongeldig getalveld? Val terug op de vorige waarde in plaats van NaN
+  // op te slaan (dat zou de lesuur-tijden breken).
+  if (typeof defaultSettings[key] === 'number' && (typeof value !== 'number' || isNaN(value))) {
+    renderPage(currentPage);
+    showToast('Vul een geldig getal in');
+    return;
+  }
   appSettings[key] = value;
   saveSettings();
   // Re-render navbar if name changed
   if (key === 'userName') {
     document.getElementById('navbar').innerHTML = renderNavbar();
   }
+  // De roosterinstellingen bepalen het uuroverzicht — meteen laten zien
+  if (['lessonDuration', 'startTime', 'breakAfter', 'breakDuration', 'lunchAfter', 'lunchDuration'].includes(key)) {
+    renderPage(currentPage);
+  }
+  showToast('Opgeslagen ✓');
 }
 
 // --- Help ---
@@ -2709,6 +2758,9 @@ function renderPlanSelector(activePlan) {
 
 function selectPlan(id) {
   activePlanId = id;
+  // Weergavestand hoort bij één plan: terug naar deze week en ingeklapte lijst
+  weekStripOffset = 0;
+  availExpanded = false;
   savePlans();
   renderPage('planner');
 }
@@ -2719,6 +2771,49 @@ function toggleStudyOnExamDay(planId) {
   p.studyOnExamDay = !p.studyOnExamDay;
   savePlans();
   renderPage('planner');
+}
+
+// Wisselt tussen 'mixed' (afwisselend tussen vakken) en 'blocked' (taken van
+// hetzelfde vak zoveel mogelijk achter elkaar). Werkt alleen in automatische modus.
+function toggleStudyOrder(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  p.studyOrder = p.studyOrder === 'blocked' ? 'mixed' : 'blocked';
+  savePlans();
+  renderPage('planner');
+}
+
+// Verdeelt de uren die nu niet passen ("achterstand") over de komende dagen
+// door je beschikbare tijd per dag wat op te hogen.
+function catchUpPlan(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const st = planStatus(p);
+  const need = st.overflow;
+  if (need <= 0.05) { alert('Je hebt genoeg tijd ingepland — niks bij te plannen.'); return; }
+
+  const today0 = startOfDay(today);
+  const deadline = planDeadline(p);
+  const days = [];
+  for (let d = new Date(today0); d <= deadline; d = addDays(d, 1)) days.push(new Date(d));
+  if (!days.length) { alert('Er zijn geen dagen meer tot je deadline om over te verdelen.'); return; }
+
+  const extra = need / days.length;
+  if (!p.availability) p.availability = {};
+  let bumped = 0;
+  days.forEach(d => {
+    // Dagen met vaste tijdblokken laten we ongemoeid (die tijd ligt al vast).
+    if (daySlots(p, d).length) return;
+    const k = dateKey(d);
+    const cur = availabilityFor(p, d);
+    p.availability[k] = Math.round((cur + extra) * 2) / 2; // afronden op halve uren
+    bumped++;
+  });
+  if (!bumped) { alert('Al je dagen hebben vaste tijdblokken — pas die handmatig aan.'); return; }
+
+  savePlans();
+  renderPage('planner');
+  alert(`✓ ${fmtHours(need)} verdeeld over ${bumped} dag${bumped !== 1 ? 'en' : ''} — gemiddeld ${fmtHours(extra)} extra per dag. Pas losse dagen gerust nog aan bij "Beschikbare tijd".`);
 }
 
 function renderPlanDetail(plan) {
@@ -2777,7 +2872,11 @@ function renderPlanDetail(plan) {
           <div class="plan-stat-label">${st.overflow > 0 ? 'uur te weinig tijd' : 'uur beschikbaar'}</div>
         </div>
       </div>
-      ${st.overflow > 0 ? `<div class="plan-warning">${icon('clock', 14)} Je hebt ${fmtHours(st.overflow)} te weinig ingepland. Voeg beschikbare tijd toe of verlaag je taakuren.</div>` : ''}
+      ${st.overflow > 0 ? `
+        <div class="plan-warning catch-up">
+          <div>${icon('clock', 14)} Je hebt <strong>${fmtHours(st.overflow)}</strong> te weinig ingepland.</div>
+          <button class="btn btn-primary btn-sm" onclick="catchUpPlan(${plan.id})">${icon('calendar', 13)} Verdeel over de komende dagen</button>
+        </div>` : ''}
     </div>
 
     ${renderExamSchedule(plan)}
@@ -2788,8 +2887,7 @@ function renderPlanDetail(plan) {
       <!-- Taken -->
       <div class="card">
         <div class="card-header">
-          <button class="card-title card-collapse-toggle" onclick="toggleTasksCollapsed(${plan.id})" title="${tasksCollapsed ? 'Uitklappen' : 'Inklappen'}">
-            <span class="collapse-caret ${tasksCollapsed ? '' : 'open'}">▶</span>
+          <button class="card-title card-open-big" onclick="openAllTasksModal(${plan.id})" title="Alle taken groot bekijken">
             ${icon('listChecks')} Wat moet je doen
             <span class="collapse-count">${plan.tasks.length}</span>
           </button>
@@ -2798,9 +2896,23 @@ function renderPlanDetail(plan) {
             <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${plan.id})">${icon('plus', 14)} Taak</button>
           </div>
         </div>
-        ${tasksCollapsed ? '' : (plan.tasks.length === 0
-          ? '<div class="empty-state empty-state-compact"><p>Nog geen taken. Voeg toe wat je moet doen en hoelang het duurt.</p></div>'
-          : plan.tasks.map(t => renderTaskRow(plan, t)).join(''))}
+        ${(() => {
+          if (plan.tasks.length === 0) {
+            return '<div class="empty-state empty-state-compact"><p>Nog geen taken. Voeg toe wat je moet doen en hoelang het duurt.</p></div>';
+          }
+          // Korte lijst: de taken waar je nú aan werkt. Zo staat er nooit een
+          // lege witte plek, en loopt de pagina ook niet eindeloos door.
+          const preview = tasksForPreview(plan);
+          const rest = plan.tasks.length - preview.length;
+          return preview.map(t => renderTaskRow(plan, t)).join('') +
+            (rest > 0
+              ? `<button class="tasks-more-btn" onclick="openAllTasksModal(${plan.id})">
+                   Nog ${rest} ${rest === 1 ? 'taak' : 'taken'} &mdash; alles groot bekijken
+                 </button>`
+              : `<button class="tasks-more-btn" onclick="openAllTasksModal(${plan.id})">
+                   Alles groot bekijken
+                 </button>`);
+        })()}
       </div>
 
       <!-- Beschikbare tijd -->
@@ -2863,12 +2975,51 @@ function renderTaskRow(plan, t) {
 }
 
 let availExpanded = false;
-let tasksCollapsed = localStorage.getItem('sp_tasks_collapsed') === 'true';
 
-function toggleTasksCollapsed(planId) {
-  tasksCollapsed = !tasksCollapsed;
-  localStorage.setItem('sp_tasks_collapsed', tasksCollapsed ? 'true' : 'false');
-  renderPage('planner');
+// Hoeveel taken je op de kaart zelf ziet voordat je doorklikt.
+const TASKS_PREVIEW = 3;
+
+// De drie taken die nu het belangrijkst zijn: nog niet klaar, sterretjes
+// eerst, en daarbinnen de eigen volgorde van je lijst.
+function tasksForPreview(plan) {
+  const openTasks = plan.tasks.filter(t => {
+    const done = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
+    return !(done >= t.hours || subjectTestPassed(plan, t.subject));
+  });
+  const list = openTasks.length ? openTasks : plan.tasks;
+  return list
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => ((b.t.priority ? 1 : 0) - (a.t.priority ? 1 : 0)) || (a.i - b.i))
+    .slice(0, TASKS_PREVIEW)
+    .map(x => x.t);
+}
+
+// Alle taken in één groot venster. Het venster schuift zelf, dus de pagina
+// eronder loopt niet meer eindeloos door.
+let tasksModalPlanId = null;
+
+function openAllTasksModal(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  tasksModalPlanId = planId;
+  const klaar = p.tasks.filter(t => Math.min(t.hours, Math.max(0, t.hoursDone || 0)) >= t.hours).length;
+  openModal(`Wat moet je doen`, `
+    <div class="tasks-modal-head">
+      <span>${p.tasks.length} ${p.tasks.length === 1 ? 'taak' : 'taken'}${klaar ? ` &middot; ${klaar} klaar` : ''}</span>
+      <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${p.id})">${icon('plus', 14)} Taak</button>
+    </div>
+    <div class="tasks-modal-list">
+      ${p.tasks.length === 0
+        ? '<div class="empty-state empty-state-compact"><p>Nog geen taken.</p></div>'
+        : p.tasks.map(t => renderTaskRow(p, t)).join('')}
+    </div>
+  `, 'modal-wide');
+}
+
+// Na een actie binnen het grote venster: opnieuw opbouwen, zodat je direct
+// ziet wat er veranderd is.
+function refreshTasksModal() {
+  if (tasksModalPlanId != null) openAllTasksModal(tasksModalPlanId);
 }
 
 function toggleAvailExpanded(planId) {
@@ -3001,10 +3152,17 @@ function renderPlanScheduleView(plan, sched) {
     <label class="exam-day-toggle" title="Mag de planner ook op de toetsdag zelf nog leertijd inplannen?">
       <input type="checkbox" ${plan.studyOnExamDay ? 'checked' : ''} onchange="toggleStudyOnExamDay(${plan.id})">
       Op de toetsdag zelf nog leren
-    </label>`;
+    </label>
+    ${manual ? '' : `<label class="exam-day-toggle" title="Aan: taken van hetzelfde vak worden zoveel mogelijk achter elkaar ingepland. Uit: je wisselt per dag tussen vakken af.">
+      <input type="checkbox" ${plan.studyOrder === 'blocked' ? 'checked' : ''} onchange="toggleStudyOrder(${plan.id})">
+      Per vak achter elkaar werken
+    </label>`}`;
 
   if (daysWithWork.length === 0 && !manual) {
-    return editBar + '<div class="empty-state empty-state-compact"><p>Voeg taken en beschikbare tijd toe — dan verschijnt hier je dagindeling.</p></div>';
+    // Ook hier de stuurbalk: anders kun je een regel die je schema leegmaakt
+    // (bijvoorbeeld "max 0 uur") niet meer weghalen.
+    return editBar + renderSteerBar(plan) +
+      '<div class="empty-state empty-state-compact"><p>Voeg taken en beschikbare tijd toe — dan verschijnt hier je dagindeling.</p></div>';
   }
 
   const unschedBanner = (manual && sched.unscheduled > 0.05)
@@ -3028,6 +3186,7 @@ function renderPlanScheduleView(plan, sched) {
 
   return `
     ${editBar}
+    ${renderSteerBar(plan)}
     ${unschedBanner}
     ${renderWeekStrip(sched, plan)}
     ${weekDays.length === 0 ? `<div class="empty-state empty-state-compact"><p>${weekEmpty}</p></div>` : ''}
@@ -3062,12 +3221,20 @@ function renderPlanScheduleView(plan, sched) {
             <div class="plan-schedule-items">
               ${d.assignments.length === 0 && manual ? '<div class="plan-schedule-empty">— vrij —</div>' : ''}
               ${useTimed ? d.timed.map(a => {
+                if (a.type === 'break') {
+                  return `
+                    <div class="plan-schedule-break">
+                      <span class="plan-schedule-item-time">${a.start}–${a.end}</span>
+                      &#9749; Pauze &mdash; ${a.minutes} min
+                    </div>`;
+                }
                 const it = scheduleItemLabel(a);
                 return `
                   <div class="plan-schedule-item" style="border-left-color:${it.s ? it.s.color : 'var(--gray-300)'}">
                     <span class="plan-schedule-item-time">${a.start}–${a.end}</span>
                     ${scheduleSubjectTag(it.s)}
                     <span class="plan-schedule-item-title">${esc(it.title)}</span>
+                    <button class="schedule-item-btn check" onclick="logTaskHours(${plan.id},${a.taskId},${a.minutes / 60})" title="Dit blok afvinken (${a.minutes} min gedaan)">${icons.check}</button>
                   </div>`;
               }).join('') : d.assignments.map(a => {
                 const it = scheduleItemLabel(a);
@@ -3089,6 +3256,159 @@ function renderPlanScheduleView(plan, sched) {
       }).join('')}
     </div>
   `;
+}
+
+// --- De stuurbalk: typ wat je anders wilt ---
+// We proberen het eerst zelf te begrijpen (werkt altijd en offline). Lukt dat
+// niet, dan mag de AI het proberen — dat is een pro-functie. De AI geeft
+// alleen stuurregels terug; het schema wordt altijd door onze eigen code
+// gebouwd, dus een vreemd antwoord kan nooit je planning slopen.
+const steerExamples = ['geen weekend', 'blokken van 25 minuten', 'leren in de avond', 'max 1 uur op vrijdag'];
+
+function renderSteerBar(plan) {
+  const rules = steerList(plan);
+  const pro = userPlan === 'pro';
+  const prefs = effectivePrefs(plan);
+  return `
+    <div class="steer-bar">
+      <div class="steer-head">
+        ${icon('settings', 13)} Schema bijsturen
+        <span class="steer-sub">blokken van ${prefs.blockMinutes} min &middot; ${prefs.breakMinutes} min pauze &middot; ${prefs.variety ? 'afwisselend' : 'per vak'} &middot; ${peakLabels[prefs.peak]}</span>
+      </div>
+      <div class="steer-row">
+        <input type="text" class="form-input steer-input" id="steer-input-${plan.id}"
+               placeholder="Wat wil je anders? Bijv. &quot;minder wiskunde op maandag&quot;"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();steerApply(${plan.id})}">
+        <button class="btn btn-primary btn-sm" onclick="steerApply(${plan.id})">Aanpassen</button>
+        ${pro ? `<button class="btn btn-outline btn-sm steer-ai-btn" onclick="steerApply(${plan.id},true)" title="Laat de AI je tekst uitleggen">&#10024; AI</button>` : ''}
+      </div>
+      ${pro ? `<button class="steer-tune" onclick="aiTunePlan(${plan.id})">&#10024; Laat de AI mijn planning fijnslijpen</button>` : ''}
+      <div class="steer-hints">
+        ${steerExamples.map(h => `<button class="steer-hint" onclick="steerFill(${plan.id},'${h}')">${h}</button>`).join('')}
+      </div>
+      ${rules.length ? `
+        <div class="steer-chips">
+          ${rules.map(r => `
+            <span class="steer-chip">${esc(r.text || r.kind)}
+              <button onclick="steerRemove(${plan.id},${r.id})" title="Deze regel weghalen">${icons.x}</button>
+            </span>`).join('')}
+          <button class="steer-clear" onclick="steerClear(${plan.id})">Alles wissen</button>
+        </div>` : ''}
+      ${pro ? '' : '<div class="steer-note">&#10024; Met pro laat je de AI élke formulering begrijpen.</div>'}
+    </div>`;
+}
+
+function steerFill(planId, text) {
+  const input = document.getElementById('steer-input-' + planId);
+  if (!input) return;
+  input.value = text;
+  input.focus();
+}
+
+function steerApply(planId, forceAI) {
+  const p = getPlan(planId);
+  const input = document.getElementById('steer-input-' + planId);
+  if (!p || !input) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (!forceAI) {
+    const local = parseSteerText(text, p);
+    if (local.length) {
+      applySteerRules(p, local);
+      savePlans();
+      renderPage('planner');
+      showToast('Schema bijgewerkt ✓');
+      return;
+    }
+  }
+  if (userPlan === 'pro') { steerWithAI(planId, text); return; }
+  alert('Dat begrijp ik nog niet. Probeer het iets concreter, bijvoorbeeld:\n\n' +
+        steerExamples.map(e => '• ' + e).join('\n') +
+        '\n\nMet pro laat je de AI elke formulering begrijpen.');
+}
+
+function steerRemove(planId, id) {
+  const p = getPlan(planId);
+  if (!p) return;
+  removeSteerRule(p, id);
+  savePlans();
+  renderPage('planner');
+}
+
+function steerClear(planId) {
+  const p = getPlan(planId);
+  if (!p || !steerList(p).length) return;
+  if (!confirm('Alle bijstuur-regels weghalen? Je schema gaat terug naar je oorspronkelijke antwoorden.')) return;
+  // Van achter naar voren, zodat uren-bijstellingen netjes terugdraaien
+  steerList(p).slice().reverse().forEach(r => removeSteerRule(p, r.id));
+  savePlans();
+  renderPage('planner');
+  showToast('Bijsturen gewist ✓');
+}
+
+// Pro: de AI kijkt naar je hele situatie (toetsen, tijd, hoe je leert) en
+// stelt zelf een paar verbeteringen voor. Dat gaat via dezelfde weg als de
+// stuurbalk, dus ook hier bouwt onze eigen code uiteindelijk het schema.
+function aiTunePlan(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  if (userPlan !== 'pro') { alert('Fijnslijpen door de AI is een pro-functie.'); return; }
+  const prefs = effectivePrefs(p);
+  const st = planStatus(p);
+  const naam = (k) => (subjects[k] ? subjects[k].name : k);
+  const toetsen = [...(p.exams || [])]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 12)
+    .map(e => `${naam(e.subject)} op ${formatDate(new Date(e.date))}`);
+
+  const beschrijving = [
+    `Ik plan mijn ${p.type === 'examen' ? 'examens' : 'toetsweek'}.`,
+    `Mijn toetsen: ${toetsen.join('; ') || 'nog geen'}.`,
+    `Ik heb ongeveer ${fmtHours(p.defaultDailyHours != null ? p.defaultDailyHours : 2)} per dag en in totaal ${fmtHours(st.totalNeeded)} aan leerwerk.`,
+    `Ik ben het scherpst: ${peakLabels[prefs.peak]}.`,
+    `Nu werk ik in blokken van ${prefs.blockMinutes} minuten met ${prefs.breakMinutes} minuten pauze, ${prefs.variety ? 'afwisselend tussen vakken' : 'per vak achter elkaar'}.`,
+    prefs.hardSubjects.length ? `Moeilijk voor mij: ${prefs.hardSubjects.map(naam).join(', ')}.` : '',
+    prefs.blockedDays.length ? `Ik kan niet leren op: ${prefs.blockedDays.map(d => dayLabelsNl[d]).join(', ')}.` : '',
+    st.overflow > 0.05 ? `Er past nu ${fmtHours(st.overflow)} niet in mijn planning.` : '',
+    'Wat kan beter aan mijn leerschema?',
+  ].filter(Boolean).join(' ');
+
+  steerWithAI(planId, beschrijving, 'tune');
+}
+
+// Pro: de AI laat de vrije tekst omzetten naar stuurregels (/api/plan).
+async function steerWithAI(planId, text, mode) {
+  const p = getPlan(planId);
+  if (!p) return;
+  showToast('✨ AI denkt mee…');
+  const vakken = [...new Set((p.exams || []).map(e => e.subject).concat((p.tasks || []).map(t => t.subject)))]
+    .filter(k => subjects[k])
+    .map(k => ({ key: k, name: subjects[k].name }));
+  try {
+    const res = await fetch('/api/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, mode: mode || 'steer', subjects: vakken, prefs: effectivePrefs(p) }),
+    });
+    if (!res.ok) {
+      alert((await res.text()) || 'De AI is nu niet beschikbaar. De stuurbalk werkt gewoon zonder.');
+      return;
+    }
+    const data = await res.json();
+    const added = applySteerRules(p, data.rules);
+    if (!added) {
+      alert(data.reply || (mode === 'tune'
+        ? 'De AI vindt je planning zo al goed — niks aangepast.'
+        : 'Hier kon de AI geen aanpassing van maken. Probeer het iets concreter.'));
+      return;
+    }
+    savePlans();
+    renderPage('planner');
+    showToast('✨ ' + (data.reply || 'Schema bijgewerkt'));
+  } catch (e) {
+    alert('Geen verbinding met de AI (werkt alleen op de online versie).\n\nDe stuurbalk zelf werkt gewoon — probeer bijvoorbeeld "geen weekend".');
+  }
 }
 
 // --- Studieschema handmatig aanpassen ---
@@ -3325,6 +3645,7 @@ function stofLog(planId, subjectKey, taskId, h) {
   savePlans();
   renderPage('planner');
   openSubjectModal(planId, subjectKey);
+  if (h > 0) showToast(t.done ? `🎉 "${t.title}" helemaal af!` : `✓ ${fmtHours(h)} gelogd`);
 }
 
 function stofToggle(planId, subjectKey, taskId) {
@@ -3636,6 +3957,8 @@ function openAddPlanModal() {
 
 // ===== "Maak mijn planning" — alles automatisch op basis van je toetsen =====
 let genExams = [];
+let genHard = [];          // vakken die je moeilijk vindt
+let genBlockedDays = [];   // weekdagen waarop je niet kunt leren
 
 function openGeneratePlanModal() {
   // Begin met je aankomende toetsen uit de Toetsen-pagina (scheelt invullen)
@@ -3646,6 +3969,8 @@ function openGeneratePlanModal() {
     .slice(0, 12)
     .map(t => ({ subject: t.subject, date: dateKey(new Date(t.date)), title: t.title || '' }));
   if (genExams.length === 0) genExams = [{ subject: '', date: '', title: '' }];
+  genHard = [];
+  genBlockedDays = [];
 
   openModal('✨ Maak mijn planning', `
     <p style="color:var(--gray-500);font-size:0.88rem;margin:0 0 14px">
@@ -3684,11 +4009,84 @@ function openGeneratePlanModal() {
       </div>
     </div>
 
-    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;padding:12px" onclick="generatePlan()">
+    <div class="gen-section-title">Hoe leer jij het liefst?</div>
+    <p class="form-hint" style="margin:0 0 12px">Hiermee maken we je dagen afwisselend in plaats van uur na uur hetzelfde vak.</p>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div class="form-group" style="flex:1;min-width:150px">
+        <label class="form-label">Wanneer ben je het scherpst?</label>
+        <select class="form-select" id="gen-peak">
+          <option value="any" selected>Maakt niet uit</option>
+          <option value="morning">&apos;s Ochtends</option>
+          <option value="afternoon">&apos;s Middags, na school</option>
+          <option value="evening">&apos;s Avonds</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:1;min-width:150px">
+        <label class="form-label">Hoe lang achter elkaar?</label>
+        <select class="form-select" id="gen-block">
+          <option value="25">25 min + 5 min pauze</option>
+          <option value="45" selected>45 min + 10 min pauze</option>
+          <option value="60">60 min + 15 min pauze</option>
+          <option value="90">90 min + 15 min pauze</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Welke vakken vind je moeilijk?
+        <span style="font-weight:400;color:var(--gray-400)">(krijgen meer tijd en je scherpste blokken)</span>
+      </label>
+      <div class="gen-chip-row" id="gen-hard-row"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Op welke dagen kun je niet leren?</label>
+      <div class="gen-chip-row">
+        ${[1, 2, 3, 4, 5, 6, 0].map(d => `
+          <button type="button" class="gen-chip" id="gen-day-${d}" onclick="genToggleDay(${d})">${dayLabelsNl[d].slice(0, 2)}</button>
+        `).join('')}
+      </div>
+    </div>
+
+    <label class="exam-day-toggle" style="margin-bottom:4px">
+      <input type="checkbox" id="gen-variety" checked>
+      Vakken afwisselen &mdash; nooit twee blokken hetzelfde vak achter elkaar
+    </label>
+
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px;padding:12px" onclick="generatePlan()">
       ✨ Maak mijn planning
     </button>
   `);
   renderGenExamRows();
+}
+
+// Moeilijke vakken: de vakken die je bij je toetsen hebt gekozen
+function renderGenHardRow() {
+  const box = document.getElementById('gen-hard-row');
+  if (!box) return;
+  const keys = [...new Set(genExams.map(e => e.subject).filter(k => subjects[k]))];
+  if (!keys.length) {
+    box.innerHTML = '<span class="form-hint">Kies eerst je toetsen hierboven.</span>';
+    return;
+  }
+  genHard = genHard.filter(k => keys.includes(k));
+  box.innerHTML = keys.map(k => `
+    <button type="button" class="gen-chip ${genHard.includes(k) ? 'on' : ''}" onclick="genToggleHard('${k}')">
+      ${subjects[k].icon} ${esc(subjects[k].name)}
+    </button>
+  `).join('');
+}
+
+function genToggleHard(key) {
+  genHard = genHard.includes(key) ? genHard.filter(k => k !== key) : [...genHard, key];
+  renderGenHardRow();
+}
+
+function genToggleDay(d) {
+  genBlockedDays = genBlockedDays.includes(d) ? genBlockedDays.filter(x => x !== d) : [...genBlockedDays, d];
+  const btn = document.getElementById('gen-day-' + d);
+  if (btn) btn.classList.toggle('on', genBlockedDays.includes(d));
 }
 
 function renderGenExamRows() {
@@ -3697,13 +4095,14 @@ function renderGenExamRows() {
   const opts = (sel) => mySubjectEntries().map(([k, s]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${s.name}</option>`).join('');
   box.innerHTML = genExams.map((ex, i) => `
     <div class="gen-exam-row">
-      <select class="form-select" onchange="genExams[${i}].subject=this.value">
+      <select class="form-select" onchange="genExams[${i}].subject=this.value;renderGenHardRow()">
         <option value="">Vak...</option>${opts(ex.subject)}
       </select>
       <input type="date" class="form-input" value="${ex.date}" onchange="genExams[${i}].date=this.value">
       <button type="button" class="lesson-action-btn delete" onclick="genRemoveRow(${i})" title="Verwijderen">${icons.x}</button>
     </div>
   `).join('');
+  renderGenHardRow();
 }
 
 function genAddRow() {
@@ -3745,6 +4144,11 @@ function generatePlan() {
   const daily = Math.max(0.5, parseFloat(document.getElementById('gen-daily').value) || 2);
   const ready = Math.max(0, parseInt(document.getElementById('gen-ready').value) || 0);
 
+  const blockMinutes = parseInt((document.getElementById('gen-block') || {}).value) || 45;
+  const breakByBlock = { 25: 5, 45: 10, 60: 15, 90: 15 };
+  const peak = (document.getElementById('gen-peak') || {}).value || 'any';
+  const variety = !document.getElementById('gen-variety') || document.getElementById('gen-variety').checked;
+
   const sorted = [...valid].sort((a, b) => new Date(a.date) - new Date(b.date));
   const earliest = new Date(sorted[0].date);
 
@@ -3756,14 +4160,25 @@ function generatePlan() {
     examDate: earliest.toISOString(),
     readyDaysBefore: ready,
     defaultDailyHours: daily,
-    availability: {}, slots: {}, exams: [], tasks: [],
+    availability: {}, slots: {}, exams: [], tasks: [], steer: [],
+    // Je antwoorden op de vragen — hiermee bouwt de planner je dagindeling
+    prefs: {
+      blockMinutes,
+      breakMinutes: breakByBlock[blockMinutes] != null ? breakByBlock[blockMinutes] : 10,
+      variety,
+      peak,
+      hardSubjects: genHard.slice(),
+      blockedDays: genBlockedDays.slice(),
+    },
   };
 
   let exId = 1, taskId = 1;
   sorted.forEach(e => {
     const s = subjects[e.subject];
+    // Moeilijke vakken krijgen een derde meer leertijd
+    const total = genHard.includes(e.subject) ? hoursPer * 1.3 : hoursPer;
     plan.exams.push({ id: exId++, subject: e.subject, title: e.title || '', date: new Date(e.date).toISOString(), time: '' });
-    genTasksForExam(e.subject, e.title, hoursPer).forEach(t => {
+    genTasksForExam(e.subject, e.title, total).forEach(t => {
       plan.tasks.push({ id: taskId++, subject: e.subject, title: `${t.title} — ${s ? s.name : ''}`.trim(), hours: t.hours, hoursDone: 0, done: false });
     });
   });
@@ -3780,9 +4195,9 @@ function generatePlan() {
     openModal('Klaar! 🎉', `
       <p style="margin:0 0 12px">Je planning <strong>${esc(plan.name)}</strong> staat klaar met <strong>${plan.exams.length} toets${plan.exams.length !== 1 ? 'en' : ''}</strong> en <strong>${plan.tasks.length} leertaken</strong>, automatisch ingepland.</p>
       <ul class="onb-list" style="margin-bottom:14px">
+        <li>Je dagen zijn verdeeld in blokken van ${blockMinutes} min met pauzes ertussen${variety ? ', met afwisseling tussen vakken' : ''}</li>
         <li>Vink taken af of log je uren — je ziet of je op schema loopt</li>
-        <li>Niet genoeg tijd? Pas "Tijd per dag" of de taken aan</li>
-        <li>Iets liever eerder doen? Tik op de ⭐ bij een taak</li>
+        <li>Iets anders willen? Typ het in de <strong>stuurbalk</strong> onder je schema, bijvoorbeeld "minder wiskunde op maandag"</li>
         <li>Wil je zelf schuiven? Gebruik "Schema aanpassen"</li>
       </ul>
       <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Aan de slag</button>
@@ -4015,6 +4430,7 @@ function toggleTaskPriority(planId, taskId) {
   t.priority = !t.priority;
   savePlans();
   renderPage('planner');
+  refreshTasksModal();
 }
 
 function openEditTaskModal(planId, taskId) {
@@ -4103,6 +4519,14 @@ function logTaskHours(planId, taskId, delta) {
   savePlans();
   closeModal();
   renderPage('planner');
+  const added = t.hoursDone - before;
+  if (added > 0) {
+    showToast(t.done
+      ? `🎉 "${t.title}" helemaal af!`
+      : `✓ ${fmtHours(added)} gelogd — ${fmtHours(t.hoursDone)} / ${fmtHours(t.hours)}`);
+  } else if (added < 0) {
+    showToast(`✓ Gecorrigeerd — ${fmtHours(t.hoursDone)} / ${fmtHours(t.hours)}`);
+  }
 }
 
 function logTaskHoursExact(e, planId, taskId) {
@@ -4124,6 +4548,8 @@ function toggleTaskDone(planId, taskId) {
   if (t.done) updateStreak();
   savePlans();
   renderPage('planner');
+  refreshTasksModal();
+  showToast(t.done ? `🎉 "${t.title}" afgevinkt!` : `"${t.title}" weer open gezet`);
 }
 
 // Houdt per dag bij hoeveel uur je hebt gestudeerd, zodat het schema
@@ -4142,6 +4568,7 @@ function deleteTask(planId, taskId) {
   p.tasks = p.tasks.filter(t => t.id !== taskId);
   savePlans();
   renderPage('planner');
+  refreshTasksModal();
 }
 
 // --- Dashboard-kaart: wat moet je vandaag leren? ---
