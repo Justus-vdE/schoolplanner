@@ -879,8 +879,22 @@ function lessonHourTimes() {
   return out;
 }
 
+// --- AI-functies (de ✨-knoppen in de stuurbalk) ---
+// Staat UIT tot er twee dingen geregeld zijn in Cloudflare: een secret
+// ANTHROPIC_API_KEY én een limiet op het gebruik. /api/plan is namelijk
+// bereikbaar voor iedereen die de site vindt, en elke aanvraag kost geld.
+// Zolang dit false is, zie je de AI-knoppen niet en werkt de stuurbalk
+// gewoon op de ingebouwde parser ("geen weekend", "blokken van 25 min").
+// Aanzetten = deze regel op true zetten.
+const aiFeaturesEnabled = false;
+
 // --- Plan (gratis/pro) ---
 let userPlan = localStorage.getItem('sp_user_plan') || 'pro';
+
+// Mag deze gebruiker de AI gebruiken? Alleen als de functie aan staat.
+function aiAvailable() {
+  return aiFeaturesEnabled && userPlan === 'pro';
+}
 
 function setUserPlan(plan) {
   userPlan = plan;

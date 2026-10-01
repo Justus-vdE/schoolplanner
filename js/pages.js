@@ -3267,7 +3267,7 @@ const steerExamples = ['geen weekend', 'blokken van 25 minuten', 'leren in de av
 
 function renderSteerBar(plan) {
   const rules = steerList(plan);
-  const pro = userPlan === 'pro';
+  const pro = aiAvailable();
   const prefs = effectivePrefs(plan);
   return `
     <div class="steer-bar">
@@ -3294,7 +3294,7 @@ function renderSteerBar(plan) {
             </span>`).join('')}
           <button class="steer-clear" onclick="steerClear(${plan.id})">Alles wissen</button>
         </div>` : ''}
-      ${pro ? '' : '<div class="steer-note">&#10024; Met pro laat je de AI élke formulering begrijpen.</div>'}
+      ${pro || !aiFeaturesEnabled ? '' : '<div class="steer-note">&#10024; Met pro laat je de AI élke formulering begrijpen.</div>'}
     </div>`;
 }
 
@@ -3322,10 +3322,10 @@ function steerApply(planId, forceAI) {
       return;
     }
   }
-  if (userPlan === 'pro') { steerWithAI(planId, text); return; }
+  if (aiAvailable()) { steerWithAI(planId, text); return; }
   alert('Dat begrijp ik nog niet. Probeer het iets concreter, bijvoorbeeld:\n\n' +
         steerExamples.map(e => '• ' + e).join('\n') +
-        '\n\nMet pro laat je de AI elke formulering begrijpen.');
+        (aiFeaturesEnabled ? '\n\nMet pro laat je de AI elke formulering begrijpen.' : ''));
 }
 
 function steerRemove(planId, id) {
@@ -3353,7 +3353,12 @@ function steerClear(planId) {
 function aiTunePlan(planId) {
   const p = getPlan(planId);
   if (!p) return;
-  if (userPlan !== 'pro') { alert('Fijnslijpen door de AI is een pro-functie.'); return; }
+  if (!aiAvailable()) {
+    alert(aiFeaturesEnabled
+      ? 'Fijnslijpen door de AI is een pro-functie.'
+      : 'Fijnslijpen door de AI staat nog uit.');
+    return;
+  }
   const prefs = effectivePrefs(p);
   const st = planStatus(p);
   const naam = (k) => (subjects[k] ? subjects[k].name : k);
