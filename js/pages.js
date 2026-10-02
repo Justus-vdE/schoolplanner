@@ -2943,7 +2943,9 @@ function renderPlanDetail(plan) {
     <div class="card">
       <div class="card-header">
         <div class="card-title">${icon('calendar')} Jouw studieschema</div>
-        <span style="font-size:0.8rem;color:var(--gray-400)">automatisch verdeeld</span>
+        <button class="btn btn-outline btn-sm" onclick="openExportIcsModal(${plan.id})" title="Je studieblokken in je eigen agenda">
+          &#128197; Zet in je agenda
+        </button>
       </div>
       ${renderPlanScheduleView(plan, st.sched)}
     </div>
@@ -3670,6 +3672,87 @@ async function steerWithAI(planId, text, mode) {
   } catch (e) {
     alert('Geen verbinding met de AI (werkt alleen op de online versie).\n\nDe stuurbalk zelf werkt gewoon — probeer bijvoorbeeld "geen weekend".');
   }
+}
+
+// --- Je planning in je agenda zetten ---
+// Magister laat ons niets in jouw rooster schrijven (die koppeling is
+// alleen-lezen), dus we doen het andersom: je studieblokken als
+// agenda-bestand, dat je importeert in de Agenda-app waar je
+// Magister-rooster al in staat. Dan staan je lessen en je leerblokken
+// gewoon door elkaar.
+function openExportIcsModal(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const st = planStatus(p);
+  const blokken = st.sched.days.reduce((n, d) => n + (d.timed || []).filter(t => t.type === 'study').length, 0);
+
+  openModal('&#128197; Zet je planning in je agenda', `
+    ${blokken === 0
+      ? '<div class="empty-state empty-state-compact"><p>Je schema is nog leeg. Voeg taken en beschikbare tijd toe, dan kun je het exporteren.</p></div>'
+      : `
+      <p style="margin:0 0 12px">Je krijgt een agenda-bestand met <strong>${blokken} studieblok${blokken !== 1 ? 'ken' : ''}</strong>. Open je dat in de agenda waar je Magister-rooster al in staat, dan zie je je lessen en je leerblokken door elkaar.</p>
+
+      <label class="exam-day-toggle">
+        <input type="checkbox" id="ics-exams" checked>
+        Mijn toetsen ook meenemen
+      </label>
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label">Herinnering vooraf</label>
+        <select class="form-select" id="ics-reminder">
+          <option value="0">Geen</option>
+          <option value="5">5 minuten vooraf</option>
+          <option value="10" selected>10 minuten vooraf</option>
+          <option value="30">30 minuten vooraf</option>
+        </select>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="exportPlanIcs(${p.id})">
+        &#11015; Agenda-bestand downloaden
+      </button>
+
+      <details class="ics-help">
+        <summary>Hoe krijg ik het in mijn agenda?</summary>
+        <p><strong>iPhone of iPad</strong> &mdash; tik op het bestand. De Agenda-app opent en vraagt in welke agenda je het wilt zetten.</p>
+        <p><strong>Mac</strong> &mdash; dubbelklik het bestand; Agenda vraagt dan hetzelfde.</p>
+        <p><strong>Google Agenda</strong> &mdash; ga naar Instellingen &rarr; Importeren en exporteren &rarr; kies het bestand.</p>
+        <p class="form-hint">Verandert je planning? Exporteer opnieuw: je agenda werkt dezelfde afspraken bij in plaats van ze dubbel te zetten.</p>
+      </details>`}
+  `);
+}
+
+function exportPlanIcs(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const exams = !document.getElementById('ics-exams') || document.getElementById('ics-exams').checked;
+  const reminder = parseInt((document.getElementById('ics-reminder') || {}).value) || 0;
+  const cal = planToIcs(p, { exams, reminderMinutes: reminder });
+  if (cal.studyCount === 0 && cal.examCount === 0) {
+    alert('Er staat nog niets in je schema om te exporteren.');
+    return;
+  }
+  const naam = (p.name || 'studieplanning').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  downloadIcsFile(`${naam || 'studieplanning'}.ics`, cal.text);
+  closeModal();
+  showToast(`${cal.studyCount} studieblok${cal.studyCount !== 1 ? 'ken' : ''}${cal.examCount ? ` en ${cal.examCount} toets${cal.examCount !== 1 ? 'en' : ''}` : ''} geëxporteerd ✓`);
+}
+
+function downloadIcsFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  // Op iPhone/iPad werkt downloaden niet altijd; daar openen we het bestand,
+  // zodat Safari het aan de Agenda-app aanbiedt.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+  if (isIOS) {
+    window.open(url, '_blank');
+  } else {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 // --- Studieschema handmatig aanpassen ---

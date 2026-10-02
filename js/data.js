@@ -626,6 +626,142 @@ function icsToWeekSchedule(events) {
   return result;
 }
 
+// ============================================================
+// --- Je planning als agenda-bestand (.ics) ---
+// Magister laat ons niets in jouw rooster schrijven: die koppeling is
+// alleen-lezen. Wat wél werkt — en overal werkt — is je studieblokken als
+// agenda-bestand uitvoeren. Importeer je dat in de Agenda-app waar je
+// Magister-rooster al in staat, dan zie je je lessen en je leerblokken
+// netjes door elkaar, op je Mac én je iPhone.
+// ============================================================
+
+// Tekens die in iCal een betekenis hebben, onschadelijk maken.
+function icsEscape(text) {
+  return String(text == null ? '' : text)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+// iCal-regels mogen maximaal 75 tekens zijn; langere regels worden gevouwen
+// door ze te vervolgen met een regel die met een spatie begint.
+function icsFold(line) {
+  if (line.length <= 75) return line;
+  const parts = [line.slice(0, 75)];
+  let rest = line.slice(75);
+  while (rest.length > 74) {
+    parts.push(' ' + rest.slice(0, 74));
+    rest = rest.slice(74);
+  }
+  if (rest.length) parts.push(' ' + rest);
+  return parts.join('\r\n');
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// Lokale tijd zonder tijdzone ("floating"): agenda-apps lezen dit als de
+// tijd in je eigen tijdzone, en dat is precies wat we bedoelen.
+function icsLocal(d) {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;
+}
+
+function icsUtcStamp(d) {
+  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
+}
+
+// Zet "16:30" op een datum om in een echte Date.
+function atTime(date, hhmm) {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  const d = startOfDay(date);
+  d.setHours(h || 0, m || 0, 0, 0);
+  return d;
+}
+
+// Bouwt het agenda-bestand. opts: { exams: bool, reminderMinutes: number|null }
+function planToIcs(plan, opts) {
+  const o = opts || {};
+  const sched = buildSchedule(plan);
+  const stamp = icsUtcStamp(new Date());
+  // Loopt op bij elke export, zodat agenda-apps een herimport zien als een
+  // update van dezelfde afspraak in plaats van als een nieuwe.
+  const seq = Math.floor(Date.now() / 60000) % 2000000000;
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Examen-Planner//Studieplanning//NL',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    `X-WR-CALNAME:${icsEscape('Studieplanning — ' + (plan.name || 'Planner'))}`,
+  ];
+
+  const addEvent = (uid, start, end, title, description) => {
+    lines.push('BEGIN:VEVENT');
+    lines.push(`UID:${uid}`);
+    lines.push(`DTSTAMP:${stamp}`);
+    lines.push(`SEQUENCE:${seq}`);
+    lines.push(`DTSTART:${icsLocal(start)}`);
+    lines.push(`DTEND:${icsLocal(end)}`);
+    lines.push(`SUMMARY:${icsEscape(title)}`);
+    if (description) lines.push(`DESCRIPTION:${icsEscape(description)}`);
+    if (o.reminderMinutes != null && o.reminderMinutes > 0) {
+      lines.push('BEGIN:VALARM');
+      lines.push('ACTION:DISPLAY');
+      lines.push(`TRIGGER:-PT${Math.round(o.reminderMinutes)}M`);
+      lines.push(`DESCRIPTION:${icsEscape(title)}`);
+      lines.push('END:VALARM');
+    }
+    lines.push('END:VEVENT');
+  };
+
+  let studyCount = 0;
+  sched.days.forEach(day => {
+    (day.timed || []).forEach((block, i) => {
+      if (block.type !== 'study') return;   // pauzes horen niet in je agenda
+      const subj = subjects[block.subject];
+      // De vaknaam staat al in de titel van de taak; die niet twee keer noemen.
+      let taak = block.title || '';
+      if (subj && taak.endsWith('— ' + subj.name)) {
+        taak = taak.slice(0, -('— ' + subj.name).length).trim();
+      }
+      const title = `${subj ? subj.icon + ' ' : '📚 '}${subj ? subj.name : 'Leren'}${taak ? ' — ' + taak : ''}`;
+      addEvent(
+        `sp-${plan.id}-${day.key}-${i}@examen-planner`,
+        atTime(day.date, block.start),
+        atTime(day.date, block.end),
+        title,
+        `Studieblok uit je planning "${plan.name || 'Planner'}" (${block.minutes} min).`
+      );
+      studyCount++;
+    });
+  });
+
+  let examCount = 0;
+  if (o.exams) {
+    (plan.exams || []).forEach(ex => {
+      const subj = subjects[ex.subject];
+      const d = new Date(ex.date);
+      // Zonder tijd zetten we hem op het eerste lesuur; anders op de echte tijd.
+      const start = atTime(d, (ex.time && /^\d{1,2}:\d{2}$/.test(ex.time)) ? ex.time : '08:30');
+      const end = new Date(start.getTime() + 90 * 60000);
+      addEvent(
+        `sp-${plan.id}-exam-${ex.id}@examen-planner`,
+        start, end,
+        `📝 Toets: ${subj ? subj.name : 'Onbekend vak'}${ex.title ? ' — ' + ex.title : ''}`,
+        'Toets uit je planning.'
+      );
+      examCount++;
+    });
+  }
+
+  lines.push('END:VCALENDAR');
+  return {
+    text: lines.map(icsFold).join('\r\n') + '\r\n',
+    studyCount,
+    examCount,
+  };
+}
+
 // --- Gekoppelde agenda's (Google / Apple / Outlook via iCal-link) ---
 let icalFeeds = [];          // [{ id, name, url, lastSync }]
 let icalEventsCache = {};    // feedId -> [{ date, title, time, allDay }]

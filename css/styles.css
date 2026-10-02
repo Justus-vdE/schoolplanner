@@ -3932,3 +3932,8 @@ a { color: inherit; text-decoration: none; }
   font-size: 0.78rem; font-weight: 600; color: var(--gray-600);
 }
 .gen-two-nums .form-input { width: 100%; min-width: 0; text-align: center; }
+
+/* Uitleg bij het exporteren naar je agenda */
+.ics-help { margin-top: 14px; font-size: 0.82rem; color: var(--gray-600); }
+.ics-help summary { cursor: pointer; font-weight: 600; color: var(--gray-700); }
+.ics-help p { margin: 8px 0 0; }
