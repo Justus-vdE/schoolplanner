@@ -2924,7 +2924,14 @@ function renderPlanDetail(plan) {
           <label class="form-label">Standaard uren per dag</label>
           <input type="number" class="form-input" min="0" max="16" step="0.5" value="${plan.defaultDailyHours}"
             onchange="updatePlanField(${plan.id},'defaultDailyHours',Math.max(0,parseFloat(this.value)||0))">
-          <span class="form-hint">Pas hieronder losse dagen aan (bijv. weekend meer, drukke dag minder).</span>
+          <span class="form-hint">Geldt voor dagen waarvoor je hieronder niets anders invult.</span>
+        </div>
+
+        ${renderWeeklyPlanner(plan)}
+
+        <div class="weekly-head" style="margin-top:16px">
+          ${icon('clock', 13)} Losse dagen
+          <span class="weekly-sub">alleen als één dag afwijkt van je week</span>
         </div>
         <div class="availability-list">
           ${renderAvailabilityRows(plan)}
@@ -3024,6 +3031,200 @@ function refreshTasksModal() {
 
 function toggleAvailExpanded(planId) {
   availExpanded = !availExpanded;
+  renderPage('planner');
+}
+
+// --- Jouw week: één keer invullen, geldt elke week ---
+// Hieronder zet je per weekdag hoeveel tijd je hebt (of van hoe laat tot hoe
+// laat), plus je vaste bezigheden zoals training. Dat herhaalt zich, dus je
+// hoeft niet elke dag los in te vullen.
+const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
+const weekdayShort = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
+
+function renderWeeklyPlanner(plan) {
+  const weekly = plan.weekly || {};
+  const commitments = Array.isArray(plan.commitments) ? plan.commitments : [];
+
+  const rows = weekdayOrder.map(d => {
+    const w = weekly[d] || {};
+    const slots = Array.isArray(w.slots) ? w.slots : [];
+    const busy = commitmentsOn(plan, d);
+    const left = weeklySlotsFor(plan, d);
+    const own = w.hours != null;
+    const shown = slots.length
+      ? left.reduce((sum, b) => sum + slotHours(b), 0)
+      : Math.max(0, (own ? w.hours : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2)) - commitmentHours(plan, d));
+    return `
+      <div class="weekly-row ${d === 0 || d === 6 ? 'weekend' : ''}">
+        <span class="weekly-day">${weekdayShort[d]}</span>
+        ${slots.length
+          ? `<span class="weekly-derived" title="Berekend uit je tijdblokken">${fmtHours(shown)}</span>`
+          : `<input type="number" class="weekly-input ${own ? 'override' : ''}" min="0" max="16" step="0.5"
+               value="${own ? w.hours : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2)}"
+               title="Uren die je deze weekdag kunt leren"
+               onchange="setWeeklyHours(${plan.id},${d},this.value)">
+             <span class="weekly-unit">uur</span>`}
+        <button class="availability-slot-btn" onclick="openWeeklySlotModal(${plan.id},${d})" title="Van hoe laat tot hoe laat">${icon('clock', 13)} tijd</button>
+        <div class="weekly-chips">
+          ${slots.map((b, i) => `<span class="slot-chip">${b.start}–${b.end}<button onclick="removeWeeklySlot(${plan.id},${d},${i})" title="Verwijderen">&times;</button></span>`).join('')}
+          ${busy.map(c => `<span class="slot-chip busy" title="Vaste bezigheid">${esc(c.label || 'Bezet')} ${c.start}–${c.end}</span>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="weekly-head">
+      ${icon('calendar', 13)} Jouw week
+      <span class="weekly-sub">één keer invullen, geldt elke week</span>
+    </div>
+    <div class="weekly-grid">${rows}</div>
+
+    <div class="weekly-head" style="margin-top:14px">
+      &#127939; Vaste bezigheden
+      <span class="weekly-sub">training, bijbaan, muziekles&hellip;</span>
+    </div>
+    ${commitments.length
+      ? `<div class="commit-list">
+          ${commitments.slice().sort((a, b) => (weekdayOrder.indexOf(a.day) - weekdayOrder.indexOf(b.day)) || timeToMin(a.start) - timeToMin(b.start)).map(c => `
+            <div class="commit-row">
+              <span class="commit-day">${weekdayShort[c.day]}</span>
+              <span class="commit-label">${esc(c.label || 'Bezet')}</span>
+              <span class="commit-time">${c.start}–${c.end}</span>
+              <button class="lesson-action-btn delete" onclick="removeCommitment(${plan.id},${c.id})" title="Verwijderen">${icons.x}</button>
+            </div>`).join('')}
+         </div>`
+      : '<p class="form-hint" style="margin:0 0 8px">Nog niets. Heb je elke dinsdag training? Voeg het toe, dan plant de planner daar niks overheen.</p>'}
+    <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center" onclick="openCommitmentModal(${plan.id})">
+      ${icon('plus', 14)} Vaste bezigheid toevoegen
+    </button>
+  `;
+}
+
+function setWeeklyHours(planId, jsDay, value) {
+  const p = getPlan(planId);
+  if (!p) return;
+  if (!p.weekly) p.weekly = {};
+  if (!p.weekly[jsDay]) p.weekly[jsDay] = {};
+  const v = parseFloat(value);
+  if (isNaN(v)) delete p.weekly[jsDay].hours;
+  else p.weekly[jsDay].hours = Math.max(0, Math.min(16, v));
+  savePlans();
+  renderPage('planner');
+}
+
+function openWeeklySlotModal(planId, jsDay) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const w = (p.weekly && p.weekly[jsDay]) || {};
+  const slots = Array.isArray(w.slots) ? w.slots : [];
+  openModal(`Elke ${prefDayFull[jsDay].toLowerCase()}: wanneer heb je tijd?`, `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">
+      Dit geldt voor <strong>elke ${prefDayFull[jsDay].toLowerCase()}</strong>, niet voor één losse dag.
+      Je kunt meerdere tijdblokken toevoegen.
+    </p>
+    ${slots.length ? `<div class="weekly-chips" style="margin-bottom:12px">
+      ${slots.map((b, i) => `<span class="slot-chip">${b.start}–${b.end}<button onclick="removeWeeklySlot(${planId},${jsDay},${i},true)" title="Verwijderen">&times;</button></span>`).join('')}
+    </div>` : ''}
+    <form onsubmit="addWeeklySlot(event,${planId},${jsDay})">
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Van</label>
+          <input type="time" class="form-input" id="wslot-start" value="16:00" required>
+        </div>
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Tot</label>
+          <input type="time" class="form-input" id="wslot-end" value="21:00" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px">${icon('plus', 16)} Tijdblok toevoegen</button>
+    </form>
+  `);
+}
+
+function addWeeklySlot(e, planId, jsDay) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const start = document.getElementById('wslot-start').value;
+  const end = document.getElementById('wslot-end').value;
+  if (!start || !end || timeToMin(end) <= timeToMin(start)) { alert('Kies een eindtijd die ná de starttijd ligt.'); return; }
+  if (!p.weekly) p.weekly = {};
+  if (!p.weekly[jsDay]) p.weekly[jsDay] = {};
+  if (!p.weekly[jsDay].slots) p.weekly[jsDay].slots = [];
+  p.weekly[jsDay].slots.push({ start, end });
+  p.weekly[jsDay].slots.sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  savePlans();
+  closeModal();
+  renderPage('planner');
+  showToast(`Elke ${weekdayShort[jsDay]}: ${start}–${end} ✓`);
+}
+
+function removeWeeklySlot(planId, jsDay, idx, reopen) {
+  const p = getPlan(planId);
+  const w = p && p.weekly && p.weekly[jsDay];
+  if (!w || !Array.isArray(w.slots)) return;
+  w.slots.splice(idx, 1);
+  if (!w.slots.length) delete w.slots;
+  savePlans();
+  renderPage('planner');
+  if (reopen) openWeeklySlotModal(planId, jsDay);
+}
+
+function openCommitmentModal(planId) {
+  openModal('Vaste bezigheid', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">
+      Iets dat élke week op dezelfde tijd valt. De planner plant daar niets overheen.
+    </p>
+    <form onsubmit="addCommitment(event,${planId})">
+      <div class="form-group">
+        <label class="form-label">Wat is het?</label>
+        <input type="text" class="form-input" id="commit-label" placeholder="Bijv. Training" maxlength="30" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Welke dag?</label>
+        <select class="form-select" id="commit-day" required>
+          ${weekdayOrder.map(d => `<option value="${d}">${prefDayFull[d]}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Van</label>
+          <input type="time" class="form-input" id="commit-start" value="18:00" required>
+        </div>
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Tot</label>
+          <input type="time" class="form-input" id="commit-end" value="20:00" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px">${icon('plus', 16)} Toevoegen</button>
+    </form>
+  `);
+}
+
+function addCommitment(e, planId) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const label = document.getElementById('commit-label').value.trim().slice(0, 30);
+  const day = parseInt(document.getElementById('commit-day').value);
+  const start = document.getElementById('commit-start').value;
+  const end = document.getElementById('commit-end').value;
+  if (!label || isNaN(day) || !start || !end) return;
+  if (timeToMin(end) <= timeToMin(start)) { alert('Kies een eindtijd die ná de starttijd ligt.'); return; }
+  if (!Array.isArray(p.commitments)) p.commitments = [];
+  const id = Math.max(0, ...p.commitments.map(c => c.id || 0)) + 1;
+  p.commitments.push({ id, day, start, end, label });
+  savePlans();
+  closeModal();
+  renderPage('planner');
+  showToast(`${label} op ${weekdayShort[day]} ${start}–${end} ✓`);
+}
+
+function removeCommitment(planId, id) {
+  const p = getPlan(planId);
+  if (!p || !Array.isArray(p.commitments)) return;
+  p.commitments = p.commitments.filter(c => c.id !== id);
+  savePlans();
   renderPage('planner');
 }
 
@@ -3274,7 +3475,17 @@ function renderSteerBar(plan) {
     <div class="steer-bar">
       <div class="steer-head">
         ${icon('settings', 13)} Schema bijsturen
-        <span class="steer-sub">blokken van ${prefs.blockMinutes} min &middot; ${prefs.breakMinutes} min pauze &middot; ${prefs.variety ? 'afwisselend' : 'per vak'} &middot; ${peakLabels[prefs.peak]}</span>
+        <span class="steer-sub">${prefs.variety ? 'afwisselend' : 'per vak'} &middot; ${peakLabels[prefs.peak]}</span>
+      </div>
+      <div class="steer-nums">
+        <label>Blok
+          <input type="number" min="15" max="180" step="5" value="${prefs.blockMinutes}"
+            onchange="setBlockMinutes(${plan.id},this.value)"> min
+        </label>
+        <label>Pauze
+          <input type="number" min="0" max="60" step="5" value="${prefs.breakMinutes}"
+            onchange="setBreakMinutes(${plan.id},this.value)"> min
+        </label>
       </div>
       <div class="steer-row">
         <input type="text" class="form-input steer-input" id="steer-input-${plan.id}"
@@ -3297,6 +3508,32 @@ function renderSteerBar(plan) {
         </div>` : ''}
       ${pro || !aiVisible() ? '' : `<div class="steer-note">&#10024; ${aiComingSoon() ? 'Binnenkort met pro:' : 'Met pro:'} laat de AI élke formulering begrijpen.</div>`}
     </div>`;
+}
+
+// Bloklengte en pauze direct instellen. Een eerdere stuurregel hierover
+// halen we weg, zodat wat je invult ook echt is wat je krijgt.
+function setBlockMinutes(planId, value) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const v = Math.max(15, Math.min(180, parseInt(value) || 45));
+  if (!p.prefs) p.prefs = {};
+  p.prefs.blockMinutes = v;
+  steerList(p).filter(r => r.kind === 'blockMinutes').forEach(r => removeSteerRule(p, r.id));
+  savePlans();
+  renderPage('planner');
+  showToast(`Blokken van ${v} min ✓`);
+}
+
+function setBreakMinutes(planId, value) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const v = Math.max(0, Math.min(60, parseInt(value) || 0));
+  if (!p.prefs) p.prefs = {};
+  p.prefs.breakMinutes = v;
+  steerList(p).filter(r => r.kind === 'breakMinutes').forEach(r => removeSteerRule(p, r.id));
+  savePlans();
+  renderPage('planner');
+  showToast(v === 0 ? 'Geen pauzes meer ✓' : `Pauzes van ${v} min ✓`);
 }
 
 function steerFill(planId, text) {
@@ -4048,12 +4285,10 @@ function openGeneratePlanModal() {
       </div>
       <div class="form-group" style="flex:1;min-width:150px">
         <label class="form-label">Hoe lang achter elkaar?</label>
-        <select class="form-select" id="gen-block">
-          <option value="25">25 min + 5 min pauze</option>
-          <option value="45" selected>45 min + 10 min pauze</option>
-          <option value="60">60 min + 15 min pauze</option>
-          <option value="90">90 min + 15 min pauze</option>
-        </select>
+        <div class="gen-two-nums">
+          <label>Blok <input type="number" class="form-input" id="gen-block" min="15" max="180" step="5" value="45"> min</label>
+          <label>Pauze <input type="number" class="form-input" id="gen-break" min="0" max="60" step="5" value="10"> min</label>
+        </div>
       </div>
     </div>
 
@@ -4168,8 +4403,9 @@ function generatePlan() {
   const daily = Math.max(0.5, parseFloat(document.getElementById('gen-daily').value) || 2);
   const ready = Math.max(0, parseInt(document.getElementById('gen-ready').value) || 0);
 
-  const blockMinutes = parseInt((document.getElementById('gen-block') || {}).value) || 45;
-  const breakByBlock = { 25: 5, 45: 10, 60: 15, 90: 15 };
+  const blockMinutes = Math.max(15, Math.min(180, parseInt((document.getElementById('gen-block') || {}).value) || 45));
+  const breakRaw = parseInt((document.getElementById('gen-break') || {}).value);
+  const breakMinutes = Math.max(0, Math.min(60, isNaN(breakRaw) ? 10 : breakRaw));
   const peak = (document.getElementById('gen-peak') || {}).value || 'any';
   const variety = !document.getElementById('gen-variety') || document.getElementById('gen-variety').checked;
 
@@ -4188,7 +4424,7 @@ function generatePlan() {
     // Je antwoorden op de vragen — hiermee bouwt de planner je dagindeling
     prefs: {
       blockMinutes,
-      breakMinutes: breakByBlock[blockMinutes] != null ? breakByBlock[blockMinutes] : 10,
+      breakMinutes,
       variety,
       peak,
       hardSubjects: genHard.slice(),

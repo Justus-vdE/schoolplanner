@@ -975,17 +975,80 @@ function addDays(d, n) {
   r.setDate(r.getDate() + n);
   return r;
 }
+// Tijd zoals je het zelf zou zeggen: "45 min", "2 uur", "1 uur 30 min".
+// Nooit "0,8 uur" — dat rekent niemand in zijn hoofd om.
 function fmtHours(h) {
-  const rounded = Math.round(h * 10) / 10;
-  const str = (Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1)).replace('.', ',');
-  return `${str} uur`;
+  const mins = Math.max(0, Math.round((h || 0) * 60));
+  if (mins < 60) return `${mins} min`;
+  const u = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${u} uur` : `${u} uur ${m} min`;
 }
 
 // Tijd-helpers voor de tijdblokken
 function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
 function minToTime(m) { m = Math.round(m); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`; }
 function slotHours(s) { return Math.max(0, timeToMin(s.end) - timeToMin(s.start)) / 60; }
-function daySlots(plan, d) { const k = dateKey(d); return (plan.slots && plan.slots[k]) || []; }
+
+// ============================================================
+// --- Vast weekpatroon & vaste bezigheden ---
+// Je vult één week in ("op dinsdag kan ik van 16 tot 21") en dat geldt elke
+// week. Vaste bezigheden als training, bijbaan of muziekles knippen we uit
+// die tijd, zodat er nooit een leerblok bovenop je training staat.
+//
+//   plan.weekly      = { [weekdag 0-6]: { hours: getal, slots: [{start,end}] } }
+//   plan.commitments = [ { id, day, start, end, label } ]
+// ============================================================
+
+function commitmentsOn(plan, jsDay) {
+  return (Array.isArray(plan.commitments) ? plan.commitments : [])
+    .filter(c => c && c.day === jsDay && c.start && c.end && timeToMin(c.end) > timeToMin(c.start))
+    .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+}
+
+function commitmentHours(plan, jsDay) {
+  return commitmentsOn(plan, jsDay)
+    .reduce((sum, c) => sum + (timeToMin(c.end) - timeToMin(c.start)) / 60, 0);
+}
+
+// Knipt bezette tijd uit tijdblokken: 16:00-21:00 met training van
+// 18:00-20:00 wordt 16:00-18:00 én 20:00-21:00.
+function subtractBusy(slots, busy) {
+  let out = slots
+    .map(s => ({ start: timeToMin(s.start), end: timeToMin(s.end) }))
+    .filter(s => s.end > s.start);
+  busy.forEach(b => {
+    const bs = timeToMin(b.start);
+    const be = timeToMin(b.end);
+    const next = [];
+    out.forEach(s => {
+      if (be <= s.start || bs >= s.end) { next.push(s); return; }  // geen overlap
+      if (bs > s.start) next.push({ start: s.start, end: bs });    // stuk ervóór
+      if (be < s.end) next.push({ start: be, end: s.end });        // stuk erná
+    });
+    out = next;
+  });
+  return out
+    .filter(s => s.end - s.start >= 10)   // restjes van een paar minuten zijn niks
+    .map(s => ({ start: minToTime(s.start), end: minToTime(s.end) }));
+}
+
+// Het weekpatroon voor één weekdag, met je vaste bezigheden eruit gehaald.
+function weeklySlotsFor(plan, jsDay) {
+  const w = plan.weekly && plan.weekly[jsDay];
+  const base = (w && Array.isArray(w.slots)) ? w.slots : [];
+  if (!base.length) return [];
+  return subtractBusy(base, commitmentsOn(plan, jsDay));
+}
+
+// De tijdblokken van één dag: eerst wat je voor die datum zelf hebt gekozen,
+// anders je vaste weekpatroon. In beide gevallen zonder je vaste bezigheden.
+function daySlots(plan, d) {
+  const jsDay = new Date(d).getDay();
+  const own = (plan.slots && plan.slots[dateKey(d)]) || [];
+  if (own.length) return subtractBusy(own, commitmentsOn(plan, jsDay));
+  return weeklySlotsFor(plan, jsDay);
+}
 
 // ============================================================
 // --- Leervoorkeuren & stuurregels ---
@@ -1116,12 +1179,22 @@ function availabilityFor(plan, d) {
   if (sl.length) return sl.reduce((s, b) => s + slotHours(b), 0);
   const jsDay = new Date(d).getDay();
   const key = dateKey(d);
-  // Voor één losse dag zelf uren ingevuld? Die gaan vóór de weekdag-regels.
-  let hours = (plan.availability && plan.availability[key] != null)
-    ? plan.availability[key]
-    : (effectivePrefs(plan).blockedDays.includes(jsDay)
-        ? 0
-        : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2));
+  let hours;
+  if (plan.availability && plan.availability[key] != null) {
+    // Voor deze ene dag zelf een aantal uren ingevuld: dat is het, punt.
+    hours = plan.availability[key];
+  } else if (effectivePrefs(plan).blockedDays.includes(jsDay)) {
+    hours = 0;
+  } else {
+    // Je vaste weekpatroon, anders het standaard aantal uren per dag.
+    const w = plan.weekly && plan.weekly[jsDay];
+    hours = (w && w.hours != null)
+      ? w.hours
+      : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2);
+    // Zonder tijdblokken weten we niet wannéér je training valt, dus gaat de
+    // duur gewoon van je beschikbare uren af.
+    hours = Math.max(0, hours - commitmentHours(plan, jsDay));
+  }
   // Stuurregel "maximaal X uur op maandag" verlaagt het dagbudget.
   steerList(plan).forEach(r => {
     if (r.kind === 'dayHours' && r.day === jsDay && r.hours != null) hours = Math.min(hours, Math.max(0, r.hours));
@@ -1589,7 +1662,9 @@ function planStatus(plan) {
     for (let d = new Date(start); d <= deadline && guard++ < 400; d = addDays(d, 1)) {
       const c = Math.max(0, availabilityFor(plan, d));
       capTotal += c;
-      if (d <= today0) capElapsed += c;
+      // Alleen dagen die écht voorbij zijn. Vandaag meerekenen zou betekenen
+      // dat je 's ochtends al "achter" loopt met het werk van vandaag.
+      if (d < today0) capElapsed += c;
     }
     expectedByToday = capTotal > 0 ? Math.min(totalNeeded, totalNeeded * (capElapsed / capTotal)) : 0;
   }
@@ -1601,6 +1676,9 @@ function planStatus(plan) {
     totalNeeded,
     totalDone,
     remaining: Math.max(0, totalNeeded - totalDone),
+    // Past alles wat je nog moet doen nog in de tijd die je hebt?
+    fits: sched.overflow <= 0.05,
+    capacityLeft: sched.totalCapacity,
     expectedByToday,
     diff,
     onSchedule: diff >= -0.001,
@@ -1621,10 +1699,24 @@ function getDashboardPlan() {
   return upcoming[0] || null;
 }
 
+// De melding boven je planning. "Achter op schema" is alleen alarmerend als
+// het werk écht niet meer past; loop je achter maar heb je nog tijd genoeg,
+// dan zeggen we dat ook zo. En sta je op schema, dan mag dat gevierd worden.
 function statusLabel(st) {
   if (st.totalNeeded === 0) return { text: 'Nog geen taken', cls: 'neutral' };
   if (st.pct >= 100) return { text: 'Helemaal klaar! 🎉', cls: 'ahead' };
-  if (Math.abs(st.diff) < 0.25) return { text: 'Precies op schema', cls: 'ontrack' };
-  if (st.diff > 0) return { text: `${fmtHours(st.diff)} vóór op schema`, cls: 'ahead' };
-  return { text: `${fmtHours(Math.abs(st.diff))} achter op schema`, cls: 'behind' };
+
+  const behind = Math.max(0, -st.diff);
+
+  if (st.diff > 0.25) {
+    return { text: `${fmtHours(st.diff)} vóór op schema — lekker bezig! 🎉`, cls: 'ahead' };
+  }
+  if (behind <= 0.25) {
+    return { text: 'Precies op schema — zo komt het goed 👍', cls: 'ontrack' };
+  }
+  // Je loopt achter. Past het nog? Dan is dat geen reden tot paniek.
+  if (st.fits) {
+    return { text: `${fmtHours(behind)} in te halen — je hebt nog tijd genoeg`, cls: 'ontrack' };
+  }
+  return { text: `${fmtHours(behind)} achter — je komt tijd tekort`, cls: 'behind' };
 }
