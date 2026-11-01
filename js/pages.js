@@ -3531,10 +3531,17 @@ function renderPlanScheduleView(plan, sched) {
     <div class="schedule-editbar">
       ${manual
         ? `<span class="schedule-mode">${icon('settings', 13)} Handmatig schema</span>
-           <button class="btn btn-outline btn-sm" onclick="resetSchedule(${plan.id})">&#8635; Herstel automatisch</button>`
+           <button class="btn btn-primary btn-sm" onclick="resetSchedule(${plan.id})">&#8635; Herstel automatisch</button>`
         : `<span class="schedule-mode auto">&#10024; Automatisch ingedeeld</span>
            <button class="btn btn-outline btn-sm" onclick="enterManualSchedule(${plan.id})">${icon('settings', 13)} Schema aanpassen</button>`}
     </div>
+    ${manual ? `
+      <div class="plan-warning" style="margin-bottom:12px">
+        ${icon('clock', 14)} Dit schema staat vast zoals jij het hebt ingedeeld.
+        Het verandert dus <strong>niet mee</strong> als je je tijd, je taken of je
+        instellingen aanpast. Wil je dat de planner het weer voor je verdeelt?
+        Kies <strong>Herstel automatisch</strong>.
+      </div>` : ''}
     <label class="exam-day-toggle" title="Mag de planner ook op de toetsdag zelf nog leertijd inplannen?">
       <input type="checkbox" ${plan.studyOnExamDay ? 'checked' : ''} onchange="toggleStudyOnExamDay(${plan.id})">
       Op de toetsdag zelf nog leren
@@ -3944,6 +3951,7 @@ function downloadIcsFile(filename, text) {
 function enterManualSchedule(planId) {
   const p = getPlan(planId);
   if (!p) return;
+  if (!confirm('Je gaat je schema zelf indelen.\n\nDaarmee zet je het vast zoals het nu staat: het verdeelt zich niet meer automatisch als je je tijd of je taken aanpast. Je kunt altijd terug met "Herstel automatisch".\n\nDoorgaan?')) return;
   const sched = buildSchedule(p); // huidige automatische indeling als startpunt
   const ms = {};
   sched.days.forEach(d => d.assignments.forEach(a => {
