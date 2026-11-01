@@ -1745,43 +1745,15 @@ function buildSchedule(plan) {
       it.rem -= hours;
     };
 
-    // Fase 1: taken met 'eerder doen' worden vooraan ingepland (vroegste dagen vol)
-    const prio = items.filter(i => i.task.priority);
-    if (prio.length) {
-      for (const day of days) {
-        let free = day.capacity - day.used;
-        for (const it of prio) {
-          if (free <= 0.0001) break;
-          if (it.rem <= 0.0001 || it.due < day.date) continue;
-          const chunk = Math.min(it.rem, free);
-          place(day, it, chunk);
-          free -= chunk;
-        }
-      }
-    }
-
-    // Fase 1b: taken met een voorkeursdag op die weekdag inplannen
-    const pref = items.filter(i => i.task.prefDay != null);
-    if (pref.length) {
-      for (const day of days) {
-        let free = day.capacity - day.used;
-        for (const it of pref) {
-          if (free <= 0.0001) break;
-          if (it.rem <= 0.0001 || it.due < day.date) continue;
-          if (day.date.getDay() !== it.task.prefDay) continue;
-          const chunk = Math.min(it.rem, free);
-          place(day, it, chunk);
-          free -= chunk;
-        }
-      }
-    }
-
-    // Fase 2: de rest in BLOKKEN over de overgebleven tijd.
+    // Alles in BLOKKEN over de beschikbare dagen.
     //  - standaard: afwisselen. Per blok kiezen we het vak dat die dag nog
     //    het minst aan bod kwam, en nooit twee keer hetzelfde vak achter
     //    elkaar. Zo zit je niet drie uur op één vak vast.
     //  - 'blocked': juist wél doorwerken aan hetzelfde vak, maar nog steeds
     //    in blokken met pauzes ertussen.
+    // 'Eerder doen' (⭐) en een voorkeursdag zijn voorkeuren in de sortering
+    // hieronder. Eerder waren dat eigen rondes die een hele taak in één blok
+    // neerzetten — dan kreeg je drie uur hetzelfde vak zonder pauze.
     const prefs = effectivePrefs(plan);
     const blockH = prefs.blockMinutes / 60;
     const hardSet = new Set(prefs.hardSubjects);
@@ -1826,12 +1798,27 @@ function buildSchedule(plan) {
           if (other.length) pool = other;
         }
 
+        // Een taak met een voorkeursdag wil op die weekdag: dan vooraan, en
+        // op andere dagen juist achteraan (alleen als er niks anders is).
+        const prefRank = (it) => {
+          if (it.task.prefDay == null) return 1;
+          return it.task.prefDay === jsDay ? 0 : 2;
+        };
+
         pool = pool.slice().sort((a, b) => {
           // 1. "doe wiskunde op maandag" uit de stuurbalk
           const pa = steerPrefersSubject(plan, a.task.subject, jsDay) ? 1 : 0;
           const pb = steerPrefersSubject(plan, b.task.subject, jsDay) ? 1 : 0;
           if (pa !== pb) return pb - pa;
-          // 2. eerlijk rondgaan: het vak dat vandaag het minst aan bod kwam
+          // 2. voorkeursdag van de taak zelf
+          const ra = prefRank(a);
+          const rb = prefRank(b);
+          if (ra !== rb) return ra - rb;
+          // 3. 'eerder doen' (⭐): krijgt meer blokken, maar blijft afwisselen
+          const sa = a.task.priority ? 1 : 0;
+          const sb = b.task.priority ? 1 : 0;
+          if (sa !== sb) return sb - sa;
+          // 4. eerlijk rondgaan: het vak dat vandaag het minst aan bod kwam
           if (!keepTogether) {
             const ca = doneToday[a.task.subject] || 0;
             const cb = doneToday[b.task.subject] || 0;
@@ -1856,6 +1843,19 @@ function buildSchedule(plan) {
         if (free - chunk > 0.0001 && free - chunk < sliver) chunk = Math.min(free, it.rem);
         if (chunk <= 0.0001) break;
         if (chunk < sliver && chunk < it.rem - 0.0001) break;
+        // Blijft er van dezelfde taak nog een half blokje over, plak dat dan
+        // bij het vorige blok: "45 min + 15 min" wordt één blok van 1 uur,
+        // in plaats van twee blokken met een pauze ertussen.
+        const vorige = day.blocks[day.blocks.length - 1];
+        if (vorige && vorige.taskId === it.task.id && chunk < blockH / 2) {
+          vorige.hours += chunk;
+          const bestaand = day.assignments.find(a => a.taskId === it.task.id);
+          if (bestaand) bestaand.hours += chunk;
+          day.used += chunk;
+          it.rem -= chunk;
+          free -= chunk;
+          continue;
+        }
         place(day, it, chunk);
         doneToday[it.task.subject] = (doneToday[it.task.subject] || 0) + 1;
         free -= chunk;
