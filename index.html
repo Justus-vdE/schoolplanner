@@ -15,7 +15,29 @@
   <meta property="og:locale" content="nl_NL">
   <meta name="robots" content="index, follow">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-  <link rel="stylesheet" href="css/styles.css?v=61">
+  <link rel="stylesheet" href="css/styles.css?v=62">
+  <script>
+    // Oude service worker opruimen. Op dit domein stond eerder een andere app
+    // die een service worker installeerde. Die blijft in de browser van een
+    // bezoeker hangen en serveert daarna eeuwig zijn eigen oude bestanden —
+    // ook na een harde verversing, en ook als de server allang bijgewerkt is.
+    // Wij gebruiken zelf geen service worker, dus alles wat er staat mag weg.
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        if (!regs.length) return;
+        Promise.all(regs.map(function (r) { return r.unregister(); })).then(function () {
+          if (window.caches && caches.keys) {
+            caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+            }).then(function () { location.reload(); }, function () { location.reload(); });
+          } else {
+            location.reload();
+          }
+        });
+      }).catch(function () {});
+    })();
+  </script>
   <script>
     // Thema meteen zetten, vóór het renderen, om opflikkeren te voorkomen
     (function () {
@@ -44,9 +66,9 @@
   </div>
 
   <!-- Scripts (order matters) -->
-  <script src="js/data.js?v=61"></script>
-  <script src="js/components.js?v=61"></script>
-  <script src="js/pages.js?v=61"></script>
-  <script src="js/app.js?v=61"></script>
+  <script src="js/data.js?v=62"></script>
+  <script src="js/components.js?v=62"></script>
+  <script src="js/pages.js?v=62"></script>
+  <script src="js/app.js?v=62"></script>
 </body>
 </html>
