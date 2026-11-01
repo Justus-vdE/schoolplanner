@@ -2032,7 +2032,20 @@ function planStatus(plan) {
     expectedByToday = capTotal > 0 ? Math.min(totalNeeded, totalNeeded * (capElapsed / capTotal)) : 0;
   }
 
-  const diff = totalDone - expectedByToday; // positief = vóór op schema
+  const diff = totalDone - expectedByToday; // alleen nog voor de voortgangsbalk
+
+  // Wat staat er VANDAAG op je schema, en wat heb je daarvan af? Dit is de
+  // enige eerlijke maat voor "loop ik op schema": de planner verdeelt het
+  // resterende werk elke keer opnieuw over de dagen die je nog hebt, dus
+  // een vaste achterstand-lijn uit het verleden klopt niet meer zodra die
+  // verdeling verandert. Past het werk niet meer vóór een toets, dan zegt
+  // 'shortages' dat — dát is het echte achterlopen.
+  const keyVandaag = dateKey(today0);
+  const geloggedVandaag = (plan.dailyLogged && plan.dailyLogged[keyVandaag]) || 0;
+  const dagVandaag = sched.days.find(d => +d.date === +today0);
+  const todayLeft = dagVandaag ? Math.round(dagVandaag.used * 100) / 100 : 0;
+  const todayPlanned = Math.round((todayLeft + geloggedVandaag) * 100) / 100;
+  const todayDone = Math.round(geloggedVandaag * 100) / 100;
 
   return {
     sched,
@@ -2044,6 +2057,9 @@ function planStatus(plan) {
     capacityLeft: sched.totalCapacity,
     shortages: sched.shortages || [],
     expectedByToday,
+    todayPlanned,
+    todayDone,
+    todayLeft,
     diff,
     onSchedule: diff >= -0.001,
     pct: totalNeeded > 0 ? Math.round((totalDone / totalNeeded) * 100) : 0,
@@ -2071,7 +2087,7 @@ function statusLabel(st) {
   if (st.pct >= 100) return { text: 'Helemaal klaar! 🎉', cls: 'ahead' };
 
   // Past er werk niet meer vóór zijn eigen toets? Dat is het belangrijkste
-  // dat je moet weten — ook als je verder prima op schema loopt.
+  // dat je moet weten — ook als je vandaag netjes bezig bent.
   const tekort = (st.shortages || [])[0];
   if (tekort) {
     const naam = subjects[tekort.subject] ? subjects[tekort.subject].name : 'een vak';
@@ -2083,15 +2099,20 @@ function statusLabel(st) {
     };
   }
 
-  const behind = Math.max(0, -st.diff);
-  if (st.diff > 0.25) {
-    return { text: `${fmtHours(st.diff)} vóór op schema — lekker bezig! 🎉`, cls: 'ahead' };
+  // Alles past nog. Dan gaat het alleen nog over vandaag.
+  if (st.todayPlanned <= 0.01) {
+    return { text: 'Vandaag niets te doen — alles past 👍', cls: 'ontrack' };
   }
-  if (behind <= 0.25) {
-    return { text: 'Precies op schema — zo komt het goed 👍', cls: 'ontrack' };
+  if (st.todayLeft <= 0.01) {
+    return { text: `Vandaag klaar — ${fmtHours(st.todayDone)} gedaan! 🎉`, cls: 'ahead' };
   }
-  // Je loopt achter, maar alles past nog: dat is geen reden tot paniek.
-  return { text: `${fmtHours(behind)} in te halen — je hebt nog tijd genoeg`, cls: 'ontrack' };
+  if (st.todayDone > 0.01) {
+    return {
+      text: `Nog ${fmtHours(st.todayLeft)} vandaag — ${fmtHours(st.todayDone)} al gedaan 👍`,
+      cls: 'ontrack',
+    };
+  }
+  return { text: `Vandaag ${fmtHours(st.todayPlanned)} op je schema`, cls: 'ontrack' };
 }
 
 // "Te weinig tijd" is pas bruikbaar als je weet vóór welke toets het niet

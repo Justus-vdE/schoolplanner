@@ -116,7 +116,7 @@ function renderDashboard() {
           <div class="progress-overview-ring">${renderCircularProgress(dSt.pct, 80, 7)}</div>
           <div class="progress-overview-info">
             <div class="progress-overview-label">Op schema</div>
-            <div class="progress-overview-value ${dLbl.cls}">${dSt.pct >= 100 ? 'Klaar!' : dLbl.cls === 'behind' ? fmtHours(Math.abs(dSt.diff)) + ' achter' : dLbl.cls === 'ahead' ? fmtHours(dSt.diff) + ' vóór' : 'op schema'}</div>
+            <div class="progress-overview-value ${dLbl.cls}">${dSt.pct >= 100 ? 'Klaar!' : dLbl.cls === 'behind' ? 'tijd tekort' : dSt.todayLeft > 0.01 ? 'nog ' + fmtHours(dSt.todayLeft) : 'vandaag klaar'}</div>
           </div>
         </div>` : ''}
       </div>
