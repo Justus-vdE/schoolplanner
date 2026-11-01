@@ -1422,17 +1422,39 @@ function availabilityFor(plan, d) {
 
 // Eigen deadline per taak: de dag vóór de toets van dat vak (als die in het
 // rooster staat), anders de algemene plan-deadline.
+// Kun je op de toetsdag zelf nog iets doen vóór die toets? Alleen als er een
+// tijd bij de toets staat én er vóór die tijd nog een half uur past. Een
+// toets om 09:00 betekent dus: die dag telt niet meer mee. Zonder tijd weten
+// we het niet, en gaan we uit van vroeg op de dag.
+function examDayHasRoom(plan, exam) {
+  if (!isTimeString(exam.time)) return false;
+  const sl = daySlots(plan, new Date(exam.date));
+  let start;
+  if (sl.length) {
+    start = timeToMin(sl[0].start);
+  } else {
+    const win = dayWindow(plan);
+    start = timeToMin(peakStartTime[effectivePrefs(plan).peak]);
+    if (win.from != null) start = Math.max(start, win.from);
+  }
+  return timeToMin(exam.time) - start >= 30;
+}
+
 function taskDue(plan, task, deadline) {
   if (plan.exams && plan.exams.length) {
-    const examDates = plan.exams
+    const eigen = plan.exams
       .filter(e => e.subject === task.subject)
-      .map(e => startOfDay(new Date(e.date)))
-      .sort((a, b) => a - b);
-    if (examDates.length) {
-      // Standaard: klaar de dag vóór de toets. Met 'studyOnExamDay' mag je
-      // ook op de toetsdag zelf nog leren (tot en met die dag).
-      const offset = plan.studyOnExamDay ? 0 : -1;
-      const d = startOfDay(addDays(examDates[0], offset));
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    if (eigen.length) {
+      const eerste = eigen[0];
+      const examDag = startOfDay(new Date(eerste.date));
+      // Standaard klaar de dag vóór de toets. Met 'studyOnExamDay' mag je op
+      // de toetsdag zelf nog leren — maar alleen als er vóór die toets ook
+      // echt tijd is. Anders zou hij 's middags nog voor een ochtendtoets
+      // inplannen, en dan lijkt dat vak niet urgent terwijl het dat wél is.
+      const d = (plan.studyOnExamDay && examDayHasRoom(plan, eerste))
+        ? examDag
+        : startOfDay(addDays(examDag, -1));
       return d < deadline ? d : deadline;
     }
   }

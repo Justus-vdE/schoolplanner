@@ -3548,9 +3548,10 @@ function renderPlanScheduleView(plan, sched) {
         instellingen aanpast. Wil je dat de planner het weer voor je verdeelt?
         Kies <strong>Herstel automatisch</strong>.
       </div>` : ''}
-    <label class="exam-day-toggle" title="Mag de planner ook op de toetsdag zelf nog leertijd inplannen?">
+    <label class="exam-day-toggle" title="Werkt alleen bij toetsen waar een tijd bij staat, en alleen als er vóór die tijd nog ruimte is.">
       <input type="checkbox" ${plan.studyOnExamDay ? 'checked' : ''} onchange="toggleStudyOnExamDay(${plan.id})">
       Op de toetsdag zelf nog leren
+      <span class="toggle-hint">alleen vóór de toets, dus vul een tijd in</span>
     </label>
     ${manual ? '' : `<label class="exam-day-toggle" title="Aan: taken van hetzelfde vak worden zoveel mogelijk achter elkaar ingepland. Uit: je wisselt per dag tussen vakken af.">
       <input type="checkbox" ${plan.studyOrder === 'blocked' ? 'checked' : ''} onchange="toggleStudyOrder(${plan.id})">
