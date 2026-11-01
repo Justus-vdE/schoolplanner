@@ -2887,21 +2887,27 @@ function renderPlanDetail(plan) {
       </div>
 
       <div class="plan-stats">
+        ${(() => {
+          const tot = Math.max(0, st.daysToDeadline);
+          const toets = Math.max(0, st.daysToExam);
+          const dag = (n) => (n === 1 ? 'dag' : 'dagen');
+          return `
+            <div class="plan-stat">
+              <div class="plan-stat-value">${tot}</div>
+              <div class="plan-stat-label">${dag(tot)} tot deadline</div>
+            </div>
+            <div class="plan-stat">
+              <div class="plan-stat-value">${toets}</div>
+              <div class="plan-stat-label">${toets === 0 ? 'vandaag!' : `${dag(toets)} tot ${plan.type === 'examen' ? 'examen' : 'toetsweek'}`}</div>
+            </div>`;
+        })()}
         <div class="plan-stat">
-          <div class="plan-stat-value">${st.daysToDeadline >= 0 ? st.daysToDeadline : 0}</div>
-          <div class="plan-stat-label">dagen tot deadline</div>
-        </div>
-        <div class="plan-stat">
-          <div class="plan-stat-value">${Math.max(0, st.daysToExam)}</div>
-          <div class="plan-stat-label">dagen tot ${plan.type === 'examen' ? 'examen' : 'toetsweek'}</div>
-        </div>
-        <div class="plan-stat">
-          <div class="plan-stat-value">${fmtHours(st.remaining).replace(' uur', '')}</div>
-          <div class="plan-stat-label">uur te gaan</div>
+          <div class="plan-stat-value">${fmtHoursShort(st.remaining)}</div>
+          <div class="plan-stat-label">te gaan</div>
         </div>
         <div class="plan-stat ${st.overflow > 0 ? 'warn' : ''}">
-          <div class="plan-stat-value">${st.overflow > 0 ? fmtHours(st.overflow).replace(' uur', '') : Math.round(st.sched.totalCapacity)}</div>
-          <div class="plan-stat-label">${st.overflow > 0 ? 'uur te weinig tijd' : 'uur beschikbaar'}</div>
+          <div class="plan-stat-value">${fmtHoursShort(st.overflow > 0 ? st.overflow : st.sched.totalCapacity)}</div>
+          <div class="plan-stat-label">${st.overflow > 0 ? 'tijd tekort' : 'beschikbaar'}</div>
         </div>
       </div>
       ${st.overflow > 0 ? `
@@ -3479,7 +3485,7 @@ function renderWeekStrip(sched, plan) {
     // Vandaag niets meer te doen, maar je hebt wel al uren gestudeerd? → "klaar"
     const doneToday = isToday && hours === 0 && loggedToday > 0.05;
     const exams = examsOnDate(plan, d);
-    const label = hours > 0 ? fmtHours(hours).replace(' uur', '') + 'u' : (doneToday ? '✓ klaar' : 'vrij');
+    const label = hours > 0 ? fmtHoursShort(hours) : (doneToday ? '✓ klaar' : 'vrij');
     const examMark = exams.length
       ? `<span class="week-strip-exam" title="${exams.map(e => esc((subjects[e.subject] && subjects[e.subject].name) || 'Toets')).join(', ')}">📝</span>`
       : '';

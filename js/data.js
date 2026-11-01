@@ -1119,6 +1119,16 @@ function roundQuarter(h) {
   return Math.round((parseFloat(h) || 0) * 4) / 4;
 }
 
+// Korte vorm voor plekken met weinig ruimte, zoals de cijfertegels en de
+// weekbalk: "45m", "2u", "1u 30m".
+function fmtHoursShort(h) {
+  const mins = Math.max(0, Math.round((h || 0) * 60));
+  if (mins < 60) return `${mins}m`;
+  const u = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${u}u` : `${u}u ${m}m`;
+}
+
 // Tijd zoals je het zelf zou zeggen: "45 min", "2 uur", "1 uur 30 min".
 // Nooit "0,8 uur" — dat rekent niemand in zijn hoofd om.
 function fmtHours(h) {
