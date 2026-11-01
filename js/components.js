@@ -199,8 +199,9 @@ function openModal(title, bodyHtml, extraClass) {
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
-  // Zo weet de takenlijst dat het grote venster dicht is.
+  // Zo weten de takenlijst en de vak-voor-vak flow dat het venster dicht is.
   if (typeof tasksModalPlanId !== 'undefined') tasksModalPlanId = null;
+  if (typeof taskWizard !== 'undefined') taskWizard = null;
 }
 
 // --- Toast (korte bevestiging onderin, vervangt alert voor feedback) ---

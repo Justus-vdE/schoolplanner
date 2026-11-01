@@ -2806,7 +2806,7 @@ function catchUpPlan(planId) {
     if (daySlots(p, d).length) return;
     const k = dateKey(d);
     const cur = availabilityFor(p, d);
-    p.availability[k] = Math.round((cur + extra) * 2) / 2; // afronden op halve uren
+    p.availability[k] = roundQuarter(cur + extra); // afronden op kwartieren
     bumped++;
   });
   if (!bumped) { alert('Al je dagen hebben vaste tijdblokken — pas die handmatig aan.'); return; }
@@ -2898,7 +2898,11 @@ function renderPlanDetail(plan) {
         </div>
         ${(() => {
           if (plan.tasks.length === 0) {
-            return '<div class="empty-state empty-state-compact"><p>Nog geen taken. Voeg toe wat je moet doen en hoelang het duurt.</p></div>';
+            return `
+              <div class="empty-state empty-state-compact">
+                <p>Nog geen taken. Vul per vak in wat je moet doen.</p>
+                <button class="btn btn-primary btn-sm" onclick="openTaskWizard(${plan.id},0)">${icon('listChecks', 14)} Vak voor vak invullen</button>
+              </div>`;
           }
           // Korte lijst: de taken waar je nú aan werkt. Zo staat er nooit een
           // lege witte plek, en loopt de pagina ook niet eindeloos door.
@@ -2924,8 +2928,8 @@ function renderPlanDetail(plan) {
           <label class="form-label">Standaard tijd per dag</label>
           ${stepper(
             fmtHours(plan.defaultDailyHours),
-            `updatePlanField(${plan.id},'defaultDailyHours',${Math.round((plan.defaultDailyHours - 0.5) * 10) / 10})`,
-            `updatePlanField(${plan.id},'defaultDailyHours',${Math.round((plan.defaultDailyHours + 0.5) * 10) / 10})`,
+            `updatePlanField(${plan.id},'defaultDailyHours',${roundQuarter(plan.defaultDailyHours - HOUR_STEP)})`,
+            `updatePlanField(${plan.id},'defaultDailyHours',${roundQuarter(plan.defaultDailyHours + HOUR_STEP)})`,
             plan.defaultDailyHours > 0, plan.defaultDailyHours < 16)}
           <span class="form-hint">Geldt voor dagen waarvoor je hieronder niets anders invult.</span>
         </div>
@@ -3018,7 +3022,10 @@ function openAllTasksModal(planId) {
   openModal(`Wat moet je doen`, `
     <div class="tasks-modal-head">
       <span>${p.tasks.length} ${p.tasks.length === 1 ? 'taak' : 'taken'}${klaar ? ` &middot; ${klaar} klaar` : ''}</span>
-      <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${p.id})">${icon('plus', 14)} Taak</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="openTaskWizard(${p.id},0)">${icon('listChecks', 14)} Vak voor vak</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddTaskModal(${p.id})">${icon('plus', 14)} Taak</button>
+      </div>
     </div>
     <div class="tasks-modal-list">
       ${p.tasks.length === 0
@@ -3066,11 +3073,11 @@ function renderWeeklyPlanner(plan) {
           ? `<span class="weekly-derived" title="Berekend uit je tijdblokken">${fmtHours(shown)}</span>`
           : (() => {
               const cur = own ? w.hours : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2);
-              const r = (n) => Math.round(n * 10) / 10;
+              const r = roundQuarter;
               return stepper(
                 `<span class="${own ? 'own' : ''}">${fmtHours(Math.max(0, cur - commitmentHours(plan, d)))}</span>`,
-                `setWeeklyHours(${plan.id},${d},${r(cur - 0.5)})`,
-                `setWeeklyHours(${plan.id},${d},${r(cur + 0.5)})`,
+                `setWeeklyHours(${plan.id},${d},${r(cur - HOUR_STEP)})`,
+                `setWeeklyHours(${plan.id},${d},${r(cur + HOUR_STEP)})`,
                 cur > 0, cur < 16);
             })()}
         <button class="availability-slot-btn" onclick="openWeeklySlotModal(${plan.id},${d})" title="Van hoe laat tot hoe laat">${icon('clock', 13)} tijd</button>
@@ -3081,7 +3088,23 @@ function renderWeeklyPlanner(plan) {
       </div>`;
   }).join('');
 
+  const prefs = effectivePrefs(plan);
   return `
+    <div class="weekly-head">
+      ${icon('clock', 13)} Wanneer wil je werken?
+      <span class="weekly-sub">geldt elke dag</span>
+    </div>
+    <div class="window-row">
+      <label>Niet vóór
+        <input type="time" value="${prefs.notBefore || ''}" onchange="setDayWindow(${plan.id},'notBefore',this.value)">
+      </label>
+      <label>Niet ná
+        <input type="time" value="${prefs.notAfter || ''}" onchange="setDayWindow(${plan.id},'notAfter',this.value)">
+      </label>
+      ${(prefs.notBefore || prefs.notAfter) ? `<button class="weekly-clear" onclick="clearDayWindow(${plan.id})">wissen</button>` : ''}
+    </div>
+    <p class="form-hint" style="margin:4px 0 14px">Laat leeg als het je niet uitmaakt. Zo komt er nooit een blok om 7 uur 's ochtends of om 23:00.</p>
+
     <div class="weekly-head">
       ${icon('calendar', 13)} Jouw week
       <span class="weekly-sub">één keer invullen, geldt elke week</span>
@@ -3106,7 +3129,128 @@ function renderWeeklyPlanner(plan) {
     <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center" onclick="openCommitmentModal(${plan.id})">
       ${icon('plus', 14)} Vaste bezigheid toevoegen
     </button>
+
+    <div class="weekly-head" style="margin-top:14px">
+      &#128197; Eenmalig
+      <span class="weekly-sub">iets op één dag, of een langere pauze</span>
+    </div>
+    ${renderBusyList(plan)}
+    <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center" onclick="openBusyModal(${plan.id})">
+      ${icon('plus', 14)} Eenmalige bezigheid toevoegen
+    </button>
   `;
+}
+
+// Eenmalige bezigheden vanaf vandaag, op datum gesorteerd. Wat voorbij is
+// laten we weg — dat hoeft niet meer in je blik.
+function renderBusyList(plan) {
+  const today0 = startOfDay(today);
+  const rijen = [];
+  Object.keys(plan.busy || {}).sort().forEach(key => {
+    const d = new Date(key + 'T00:00:00');
+    if (startOfDay(d) < today0) return;
+    (plan.busy[key] || []).forEach(b => rijen.push({ key, d, b }));
+  });
+  if (!rijen.length) {
+    return '<p class="form-hint" style="margin:0 0 8px">Nog niets. Moet je ergens heen of wil je op één dag een langere pauze? Zet het hier.</p>';
+  }
+  return `<div class="commit-list">
+    ${rijen.map(({ key, d, b }) => `
+      <div class="commit-row">
+        <span class="commit-date">${d.getDate()}/${d.getMonth() + 1}</span>
+        <span class="commit-label">${esc(b.label || 'Bezet')}</span>
+        <span class="commit-time">${b.start}–${b.end}</span>
+        <button class="lesson-action-btn delete" onclick="removeBusy(${plan.id},'${key}',${b.id})" title="Verwijderen">${icons.x}</button>
+      </div>`).join('')}
+  </div>`;
+}
+
+function setDayWindow(planId, field, value) {
+  const p = getPlan(planId);
+  if (!p) return;
+  if (!p.prefs) p.prefs = {};
+  p.prefs[field] = isTimeString(value) ? value : null;
+  // Een eerdere stuurregel hierover wijkt voor wat je nu zelf invult.
+  steerList(p).filter(r => r.kind === field).forEach(r => removeSteerRule(p, r.id));
+  savePlans();
+  renderPage('planner');
+  const prefs = effectivePrefs(p);
+  showToast(prefs[field]
+    ? `${field === 'notBefore' ? 'Niet vóór' : 'Niet ná'} ${prefs[field]} ✓`
+    : 'Tijd gewist ✓');
+}
+
+function clearDayWindow(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  if (!p.prefs) p.prefs = {};
+  p.prefs.notBefore = null;
+  p.prefs.notAfter = null;
+  steerList(p).filter(r => r.kind === 'notBefore' || r.kind === 'notAfter')
+    .forEach(r => removeSteerRule(p, r.id));
+  savePlans();
+  renderPage('planner');
+  showToast('Dagvenster gewist ✓');
+}
+
+function openBusyModal(planId) {
+  openModal('Eenmalige bezigheid', `
+    <p style="color:var(--gray-500);font-size:0.85rem;margin:0 0 12px">
+      Iets dat één keer op één dag valt &mdash; een afspraak, een feestje, of
+      gewoon een langere pauze. De planner plant daar niets overheen.
+    </p>
+    <form onsubmit="addBusy(event,${planId})">
+      <div class="form-group">
+        <label class="form-label">Wat is het?</label>
+        <input type="text" class="form-input" id="busy-label" placeholder="Bijv. Tandarts of Even pauze" maxlength="30" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Welke dag?</label>
+        <input type="date" class="form-input" id="busy-date" value="${dateKey(today)}" required>
+      </div>
+      <div style="display:flex;gap:10px">
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Van</label>
+          <input type="time" class="form-input" id="busy-start" value="18:00" required>
+        </div>
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Tot</label>
+          <input type="time" class="form-input" id="busy-end" value="19:00" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px">${icon('plus', 16)} Toevoegen</button>
+    </form>
+  `);
+}
+
+function addBusy(e, planId) {
+  e.preventDefault();
+  const p = getPlan(planId);
+  if (!p) return;
+  const label = document.getElementById('busy-label').value.trim().slice(0, 30);
+  const dateVal = document.getElementById('busy-date').value;
+  const start = document.getElementById('busy-start').value;
+  const end = document.getElementById('busy-end').value;
+  if (!label || !dateVal || !start || !end) return;
+  if (timeToMin(end) <= timeToMin(start)) { alert('Kies een eindtijd die ná de starttijd ligt.'); return; }
+  if (!p.busy) p.busy = {};
+  if (!p.busy[dateVal]) p.busy[dateVal] = [];
+  const id = Math.max(0, ...Object.values(p.busy).flat().map(b => b.id || 0)) + 1;
+  p.busy[dateVal].push({ id, start, end, label });
+  p.busy[dateVal].sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  savePlans();
+  closeModal();
+  renderPage('planner');
+  showToast(`${label} op ${formatDateShort(new Date(dateVal))} ✓`);
+}
+
+function removeBusy(planId, key, id) {
+  const p = getPlan(planId);
+  if (!p || !p.busy || !p.busy[key]) return;
+  p.busy[key] = p.busy[key].filter(b => b.id !== id);
+  if (!p.busy[key].length) delete p.busy[key];
+  savePlans();
+  renderPage('planner');
 }
 
 function setWeeklyHours(planId, jsDay, value) {
@@ -3259,7 +3403,7 @@ function renderAvailabilityRows(plan) {
       <div class="availability-row ${isWeekend ? 'weekend' : ''}">
         <div class="availability-main">
           <span class="availability-day">${dayShort[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}</span>
-          <input type="number" class="availability-input ${overridden ? 'override' : ''}" min="0" max="16" step="0.5" value="${val}" ${hasSlots ? 'disabled title="Bepaald door tijdblokken"' : 'title="Beschikbare uren"'}
+          <input type="number" class="availability-input ${overridden ? 'override' : ''}" min="0" max="16" step="0.25" value="${val}" ${hasSlots ? 'disabled title="Bepaald door tijdblokken"' : 'title="Beschikbare uren"'}
             onchange="setAvailability(${plan.id},'${key}',this.value)">
           <span class="availability-unit">uur</span>
           <button class="availability-slot-btn" onclick="openSlotModal(${plan.id},'${key}')" title="Specifieke tijd kiezen">${icon('clock', 13)} tijd</button>
@@ -3856,7 +4000,7 @@ function openAddToDayModal(planId, key) {
           </div>
           <div class="form-group">
             <label class="form-label">Hoeveel uur op deze dag?</label>
-            <input type="number" class="form-input" id="addday-hours" min="0.5" max="${open[0].left}" step="0.5" value="${Math.min(1, open[0].left)}" required>
+            <input type="number" class="form-input" id="addday-hours" min="0.25" max="${open[0].left}" step="0.25" value="${Math.min(1, open[0].left)}" required>
           </div>
           <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">${icon('plus', 16)} Toevoegen</button>
         </form>`}
@@ -3868,7 +4012,7 @@ function addToDay(e, planId, key) {
   const p = getPlan(planId);
   if (!p) return;
   const taskId = parseInt(document.getElementById('addday-task').value);
-  const hours = Math.max(0.5, parseFloat(document.getElementById('addday-hours').value) || 0.5);
+  const hours = Math.max(HOUR_STEP, roundQuarter(document.getElementById('addday-hours').value) || HOUR_STEP);
   if (!taskId) return;
   manualScheduleAdd(p, key, taskId, hours);
   savePlans();
@@ -3958,7 +4102,8 @@ function openSubjectModal(planId, subjectKey) {
                   <div class="stof-title ${done ? 'done' : ''}">${esc(t.title)}</div>
                   <div class="stof-sub">${fmtHours(dh)} / ${fmtHours(t.hours)}</div>
                 </div>
-                ${!done ? `<button class="stof-mini" onclick="stofLog(${planId},'${subjectKey}',${t.id},0.5)" title="+30 min">+&frac12;u</button>
+                ${!done ? `<button class="stof-mini" onclick="stofLog(${planId},'${subjectKey}',${t.id},0.25)" title="+15 minuten">+15m</button>
+                           <button class="stof-mini" onclick="stofLog(${planId},'${subjectKey}',${t.id},0.5)" title="+30 minuten">+30m</button>
                 <button class="stof-mini" onclick="stofLog(${planId},'${subjectKey}',${t.id},1)" title="+1 uur">+1u</button>` : ''}
                 <button class="stof-mini delete" onclick="stofDelete(${planId},'${subjectKey}',${t.id})" title="Verwijderen">${icons.x}</button>
               </div>`;
@@ -3967,7 +4112,7 @@ function openSubjectModal(planId, subjectKey) {
 
     <form onsubmit="addSubjectStof(event,${planId},'${subjectKey}')" class="subject-stof-add">
       <input type="text" class="form-input" id="stof-title" placeholder="Bijv. Samenvatting H5 maken" required>
-      <input type="number" class="form-input" id="stof-hours" min="0.5" max="40" step="0.5" value="1" title="Geschatte uren">
+      <input type="number" class="form-input" id="stof-hours" min="0.25" max="40" step="0.25" value="1" title="Geschatte uren">
       <button type="submit" class="btn btn-primary">${icon('plus', 14)}</button>
     </form>
     <p class="form-hint">Elke regel komt als taak in je planning en wordt automatisch ingepland in je studieschema.</p>
@@ -3979,7 +4124,7 @@ function addSubjectStof(e, planId, subjectKey) {
   const p = getPlan(planId);
   if (!p) return;
   const title = document.getElementById('stof-title').value.trim();
-  const hours = Math.max(0.5, parseFloat(document.getElementById('stof-hours').value) || 1);
+  const hours = Math.max(HOUR_STEP, roundQuarter(document.getElementById('stof-hours').value) || 1);
   if (!title) return;
   const id = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
   p.tasks.push({ id, subject: subjectKey, title, hours, hoursDone: 0, done: false });
@@ -4294,7 +4439,7 @@ function planFormFields(p) {
     </div>
     <div class="form-group">
       <label class="form-label">Standaard beschikbare uren per dag</label>
-      <input type="number" class="form-input" id="plan-daily" min="0" max="16" step="0.5" value="${p ? p.defaultDailyHours : 2}">
+      <input type="number" class="form-input" id="plan-daily" min="0" max="16" step="0.25" value="${p ? p.defaultDailyHours : 2}">
     </div>
   `;
 }
@@ -4423,6 +4568,15 @@ function openGeneratePlanModal() {
       </div>
     </div>
 
+    <div class="form-group">
+      <label class="form-label">Wanneer wil je niet werken?</label>
+      <div class="window-row">
+        <label>Niet vóór <input type="time" id="gen-notbefore" value=""></label>
+        <label>Niet ná <input type="time" id="gen-notafter" value=""></label>
+      </div>
+      <span class="form-hint">Laat leeg als het je niet uitmaakt.</span>
+    </div>
+
     <label class="exam-day-toggle" style="margin-bottom:4px">
       <input type="checkbox" id="gen-variety" checked>
       Vakken afwisselen &mdash; nooit twee blokken hetzelfde vak achter elkaar
@@ -4444,14 +4598,14 @@ function openGeneratePlanModal() {
 // De plus/min-knoppen in de wizard opnieuw tekenen
 function renderGenSteppers() {
   const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-  const r = (n) => Math.round(n * 10) / 10;
+  const r = roundQuarter;
   set('gen-perexam-box', stepper(
     fmtHours(genPerExam),
-    `genSet('perExam',${r(genPerExam - 0.5)})`, `genSet('perExam',${r(genPerExam + 0.5)})`,
+    `genSet('perExam',${r(genPerExam - HOUR_STEP)})`, `genSet('perExam',${r(genPerExam + HOUR_STEP)})`,
     genPerExam > 0.5, genPerExam < 60));
   set('gen-daily-box', stepper(
     fmtHours(genDaily),
-    `genSet('daily',${r(genDaily - 0.5)})`, `genSet('daily',${r(genDaily + 0.5)})`,
+    `genSet('daily',${r(genDaily - HOUR_STEP)})`, `genSet('daily',${r(genDaily + HOUR_STEP)})`,
     genDaily > 0.5, genDaily < 16));
   set('gen-blocks-box', `
     <div class="gen-two-steppers">
@@ -4470,7 +4624,7 @@ function renderGenHoursBox() {
     box.innerHTML = '<span class="form-hint">Kies eerst je toetsen hierboven.</span>';
     return;
   }
-  const r = (n) => Math.round(n * 10) / 10;
+  const r = roundQuarter;
   box.innerHTML = keys.map(k => {
     const h = genHours[k] != null ? genHours[k] : genPerExam;
     const eigen = genHours[k] != null;
@@ -4479,7 +4633,7 @@ function renderGenHoursBox() {
         <span class="gen-hours-vak">${subjects[k].icon} ${esc(subjects[k].name)}</span>
         ${stepper(
           `<span class="${eigen ? 'own' : ''}">${fmtHours(h)}</span>`,
-          `genSetSubjectHours('${k}',${r(h - 0.5)})`, `genSetSubjectHours('${k}',${r(h + 0.5)})`,
+          `genSetSubjectHours('${k}',${r(h - HOUR_STEP)})`, `genSetSubjectHours('${k}',${r(h + HOUR_STEP)})`,
           h > 0.5, h < 60)}
         ${eigen ? `<button type="button" class="gen-hours-reset" onclick="genSetSubjectHours('${k}',null)" title="Terug naar het standaardaantal">herstel</button>` : ''}
       </div>`;
@@ -4489,8 +4643,8 @@ function renderGenHoursBox() {
 function genSet(what, value) {
   const v = parseFloat(value);
   if (isNaN(v)) return;
-  if (what === 'perExam') genPerExam = Math.max(0.5, Math.min(60, v));
-  else if (what === 'daily') genDaily = Math.max(0.5, Math.min(16, v));
+  if (what === 'perExam') genPerExam = Math.max(HOUR_STEP, Math.min(60, roundQuarter(v)));
+  else if (what === 'daily') genDaily = Math.max(HOUR_STEP, Math.min(16, roundQuarter(v)));
   else if (what === 'block') genBlock = Math.max(15, Math.min(180, Math.round(v)));
   else if (what === 'break') genBreak = Math.max(0, Math.min(60, Math.round(v)));
   renderGenSteppers();
@@ -4501,7 +4655,7 @@ function genSetSubjectHours(key, value) {
   else {
     const v = parseFloat(value);
     if (isNaN(v)) return;
-    genHours[key] = Math.max(0.5, Math.min(60, v));
+    genHours[key] = Math.max(HOUR_STEP, Math.min(60, roundQuarter(v)));
   }
   renderGenHoursBox();
 }
@@ -4585,8 +4739,8 @@ function genTasksForExam(subject, baseTitle, totalHours) {
   let used = 0;
   parts.forEach((p, idx) => {
     let h = idx === parts.length - 1
-      ? Math.max(0.5, Math.round((totalHours - used) * 2) / 2)
-      : Math.max(0.5, Math.round(totalHours * p.frac * 2) / 2);
+      ? Math.max(HOUR_STEP, roundQuarter(totalHours - used))
+      : Math.max(HOUR_STEP, roundQuarter(totalHours * p.frac));
     used += h;
     out.push({ title: p.label, hours: h });
   });
@@ -4627,7 +4781,10 @@ function generatePlan() {
       peak,
       hardSubjects: genHard.slice(),
       blockedDays: genBlockedDays.slice(),
+      notBefore: isTimeString((document.getElementById('gen-notbefore') || {}).value) ? document.getElementById('gen-notbefore').value : null,
+      notAfter: isTimeString((document.getElementById('gen-notafter') || {}).value) ? document.getElementById('gen-notafter').value : null,
     },
+    busy: {},
   };
 
   let exId = 1, taskId = 1;
@@ -4645,6 +4802,7 @@ function generatePlan() {
   });
   // Hoeveel uur je per vak wilt besteden bewaren we, zodat je het later nog
   // kunt zien en aanpassen — ook als je je taken zelf invult.
+  plan.defaultSubjectHours = genPerExam;
   plan.subjectHours = {};
   sorted.forEach(e => {
     if (genHours[e.subject] != null) plan.subjectHours[e.subject] = genHours[e.subject];
@@ -4679,8 +4837,8 @@ function openTaskSetupModal(planId, blockMinutes, variety) {
       <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal();openPasteTasksModal(${p.id})">
         &#128203; Lijst plakken <span class="task-setup-hint">uit je agenda of Magister</span>
       </button>
-      <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="closeModal();openAddTaskModal(${p.id})">
-        ${icon('plus', 15)} Taak voor taak invullen
+      <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="openTaskWizard(${p.id},0)">
+        ${icon('listChecks', 15)} Vak voor vak invullen
       </button>
       <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="genFillStandardTasks(${p.id})">
         &#10024; Toch standaardtaken laten verzinnen
@@ -4688,6 +4846,190 @@ function openTaskSetupModal(planId, blockMinutes, variety) {
       <button class="task-setup-skip" onclick="closeModal()">Nu overslaan &mdash; ik vul het later in</button>
     </div>
   `);
+}
+
+// --- Taken invullen, vak voor vak ---
+// Eén taak toevoegen gooide je terug naar de planning, waardoor je voor elk
+// vak opnieuw moest beginnen. Dit loopt je vakken langs in de volgorde van je
+// toetsen, laat per vak zien hoeveel uur je nog moet verdelen, en blijft
+// staan terwijl je taken toevoegt.
+let taskWizard = null;     // { planId, index }
+let taskWizardHours = 1;   // uren voor de taak die je nu invult
+
+function openTaskWizard(planId, index) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const vakken = subjectsByExamDate(p);
+  if (!vakken.length) {
+    openModal('Taken invullen', `
+      <p style="margin:0 0 14px">Voeg eerst je toetsen toe &mdash; dan weten we voor welke vakken je taken moet invullen.</p>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Oké</button>
+    `);
+    return;
+  }
+  const i = Math.max(0, Math.min(vakken.length - 1, index || 0));
+  taskWizard = { planId, index: i };
+  renderTaskWizard();
+}
+
+function renderTaskWizard() {
+  if (!taskWizard) return;
+  const p = getPlan(taskWizard.planId);
+  if (!p) return;
+  const vakken = subjectsByExamDate(p);
+  const key = vakken[taskWizard.index];
+  const s = subjects[key];
+  if (!s) return;
+
+  const doel = targetHoursFor(p, key);
+  const gepland = plannedHoursFor(p, key);
+  const over = Math.round((doel - gepland) * 100) / 100;
+  const pct = doel > 0 ? Math.min(100, Math.round((gepland / doel) * 100)) : 0;
+  const eigen = p.tasks.filter(t => t.subject === key);
+  const toets = [...(p.exams || [])].filter(e => e.subject === key)
+    .sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+  const r = roundQuarter;
+
+  // Alle vakken al ingevuld? Dat tonen we, zodat je weet dat je klaar bent.
+  const alleKlaar = vakken.every(k => plannedHoursFor(p, k) > 0);
+
+  openModal('Taken invullen', `
+    <div class="tw-head">
+      <span class="tw-step">Vak ${taskWizard.index + 1} van ${vakken.length}</span>
+      <div class="tw-dots">
+        ${vakken.map((k, i) => `
+          <button class="tw-dot ${i === taskWizard.index ? 'active' : ''} ${plannedHoursFor(p, k) > 0 ? 'filled' : ''}"
+            onclick="openTaskWizard(${p.id},${i})"
+            title="${esc(subjects[k].name)}${plannedHoursFor(p, k) > 0 ? ' — ingevuld' : ' — nog leeg'}"></button>`).join('')}
+      </div>
+    </div>
+
+    <div class="tw-vak" style="background:${s.light};border-color:${s.color}">
+      <span class="tw-vak-naam" style="color:${s.color}">${s.icon} ${esc(s.name)}</span>
+      ${toets ? `<span class="tw-vak-toets">toets ${formatDate(new Date(toets.date))}</span>` : ''}
+    </div>
+
+    <div class="form-group" style="margin-top:14px">
+      <label class="form-label">Hoeveel tijd wil je aan dit vak besteden?</label>
+      ${stepper(fmtHours(doel),
+        `taskWizardSetTarget('${key}',${r(doel - HOUR_STEP)})`,
+        `taskWizardSetTarget('${key}',${r(doel + HOUR_STEP)})`,
+        doel > 0.5, doel < 60)}
+    </div>
+
+    <div class="tw-voortgang">
+      <div class="tw-bar"><div class="tw-bar-fill" style="width:${pct}%;background:${s.color}"></div></div>
+      <div class="tw-cijfers">
+        <span><strong>${fmtHours(gepland)}</strong> ingevuld van ${fmtHours(doel)}</span>
+        <span class="${over > 0.01 ? 'tw-over' : 'tw-klaar'}">
+          ${over > 0.01 ? `nog ${fmtHours(over)} te verdelen` : (over < -0.01 ? `${fmtHours(-over)} meer dan gepland` : 'precies rond ✓')}
+        </span>
+      </div>
+    </div>
+
+    ${eigen.length ? `
+      <div class="tw-lijst">
+        ${eigen.map(t => `
+          <div class="tw-taak">
+            <span class="tw-taak-titel">${esc(t.title)}</span>
+            <span class="tw-taak-uren">${fmtHours(t.hours)}</span>
+            <button class="lesson-action-btn delete" onclick="taskWizardRemove(${t.id})" title="Weghalen">${icons.x}</button>
+          </div>`).join('')}
+      </div>`
+      : '<p class="form-hint" style="margin:10px 0 0">Nog geen taken voor dit vak.</p>'}
+
+    <form onsubmit="taskWizardAdd(event)" class="tw-form">
+      <input type="text" class="form-input" id="tw-title" placeholder="Wat moet je doen? Bijv. Samenvatting H5" maxlength="80" required>
+      <div class="tw-form-rij">
+        ${stepper(fmtHours(taskWizardHours),
+          `taskWizardSetHours(${r(taskWizardHours - HOUR_STEP)})`,
+          `taskWizardSetHours(${r(taskWizardHours + HOUR_STEP)})`,
+          taskWizardHours > 0.5, taskWizardHours < 40)}
+        <button type="submit" class="btn btn-primary">${icon('plus', 15)} Toevoegen</button>
+      </div>
+      ${over > 0.01 ? `<button type="button" class="tw-rest" onclick="taskWizardSetHours(${r(over)})">Neem de resterende ${fmtHours(over)}</button>` : ''}
+    </form>
+
+    <div class="tw-nav">
+      <button class="btn btn-outline btn-sm" onclick="taskWizardNav(-1)" ${taskWizard.index === 0 ? 'disabled' : ''}>&larr; Vorige</button>
+      ${taskWizard.index < vakken.length - 1
+        ? `<button class="btn btn-primary btn-sm" onclick="taskWizardNav(1)">Volgende vak &rarr;</button>`
+        : `<button class="btn btn-primary btn-sm" onclick="taskWizardFinish()">${alleKlaar ? 'Klaar' : 'Afsluiten'}</button>`}
+    </div>
+    ${taskWizard.index === vakken.length - 1 && !alleKlaar
+      ? '<p class="form-hint" style="text-align:center;margin:8px 0 0">Nog niet elk vak heeft taken. Je kunt later terugkomen.</p>'
+      : ''}
+  `, 'modal-wide');
+}
+
+function taskWizardNav(delta) {
+  if (!taskWizard) return;
+  const p = getPlan(taskWizard.planId);
+  if (!p) return;
+  const vakken = subjectsByExamDate(p);
+  taskWizard.index = Math.max(0, Math.min(vakken.length - 1, taskWizard.index + delta));
+  taskWizardHours = 1;
+  renderTaskWizard();
+}
+
+function taskWizardSetHours(value) {
+  const v = parseFloat(value);
+  if (isNaN(v)) return;
+  taskWizardHours = Math.max(HOUR_STEP, Math.min(40, roundQuarter(v)));
+  renderTaskWizard();
+}
+
+// Je eigen doel voor dit vak bijstellen terwijl je bezig bent.
+function taskWizardSetTarget(key, value) {
+  if (!taskWizard) return;
+  const p = getPlan(taskWizard.planId);
+  if (!p) return;
+  const v = Math.max(HOUR_STEP, Math.min(60, roundQuarter(value)));
+  if (isNaN(v)) return;
+  if (!p.subjectHours) p.subjectHours = {};
+  p.subjectHours[key] = v;
+  savePlans();
+  renderPage('planner');
+  renderTaskWizard();
+}
+
+// Toevoegen en blijven staan: dat was het hele probleem.
+function taskWizardAdd(e) {
+  e.preventDefault();
+  if (!taskWizard) return;
+  const p = getPlan(taskWizard.planId);
+  if (!p) return;
+  const vakken = subjectsByExamDate(p);
+  const key = vakken[taskWizard.index];
+  const input = document.getElementById('tw-title');
+  const title = input ? input.value.trim().slice(0, 80) : '';
+  if (!title || !key) return;
+  const id = Math.max(0, ...p.tasks.map(t => t.id)) + 1;
+  p.tasks.push({ id, subject: key, title, hours: taskWizardHours, hoursDone: 0, done: false });
+  savePlans();
+  renderPage('planner');
+  taskWizardHours = 1;
+  renderTaskWizard();        // venster blijft open, cijfers meteen bijgewerkt
+  showToast(`${title} toegevoegd ✓`);
+}
+
+function taskWizardRemove(taskId) {
+  if (!taskWizard) return;
+  const p = getPlan(taskWizard.planId);
+  if (!p) return;
+  p.tasks = p.tasks.filter(t => t.id !== taskId);
+  savePlans();
+  renderPage('planner');
+  renderTaskWizard();
+}
+
+function taskWizardFinish() {
+  const p = taskWizard ? getPlan(taskWizard.planId) : null;
+  const totaal = p ? p.tasks.reduce((n, t) => n + Math.max(0, t.hours || 0), 0) : 0;
+  taskWizard = null;
+  closeModal();
+  renderPage('planner');
+  if (totaal > 0) showToast(`${fmtHours(totaal)} aan taken ingepland ✓`);
 }
 
 // Alsnog standaardtaken, voor wie er in de wizard voor koos om het zelf te
@@ -4785,7 +5127,7 @@ function updatePlanField(id, field, value) {
   // vreemds komt (de plus/min-knoppen rekenen zelf al mee).
   if (field === 'defaultDailyHours') {
     const v = parseFloat(value);
-    value = Math.max(0, Math.min(16, isNaN(v) ? 0 : Math.round(v * 10) / 10));
+    value = Math.max(0, Math.min(16, isNaN(v) ? 0 : roundQuarter(v)));
   }
   p[field] = value;
   savePlans();
@@ -4870,7 +5212,7 @@ function openAddTaskModal(planId) {
       </div>
       <div class="form-group">
         <label class="form-label">Geschatte tijd (uren)</label>
-        <input type="number" class="form-input" id="task-hours" min="0.5" max="40" step="0.5" value="2" required>
+        <input type="number" class="form-input" id="task-hours" min="0.25" max="40" step="0.25" value="2" required>
       </div>
       <label class="prio-check"><input type="checkbox" id="task-prio"> ★ Eerder doen (vooraan in je schema)</label>
       ${prefDayControl('task', null)}
@@ -4899,7 +5241,7 @@ function openPasteTasksModal(planId) {
       </div>
       <div class="form-group" style="flex:1;margin:0">
         <label class="form-label">Standaard uren per taak</label>
-        <input type="number" class="form-input" id="paste-task-hours" min="0.5" max="20" step="0.5" value="1">
+        <input type="number" class="form-input" id="paste-task-hours" min="0.25" max="20" step="0.25" value="1">
       </div>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px" onclick="importPastedTasks(${planId})">
@@ -4913,7 +5255,7 @@ function importPastedTasks(planId) {
   if (!p) return;
   const text = document.getElementById('paste-task-input').value;
   const defaultSubject = document.getElementById('paste-task-subject').value;
-  const defaultHours = Math.max(0.5, parseFloat(document.getElementById('paste-task-hours').value) || 1);
+  const defaultHours = Math.max(HOUR_STEP, roundQuarter(document.getElementById('paste-task-hours').value) || 1);
   const rows = parsePastedItems(text);
   if (!rows.length) { alert('Geen taken gevonden — plak minstens één regel tekst.'); return; }
   if (!defaultSubject && rows.some(r => !r.subject)) { alert('Kies een standaardvak (niet elke regel heeft een herkenbaar vak).'); return; }
@@ -4979,7 +5321,7 @@ function openEditTaskModal(planId, taskId) {
       </div>
       <div class="form-group">
         <label class="form-label">Geschatte tijd (uren)</label>
-        <input type="number" class="form-input" id="edit-task-hours" min="0.5" max="40" step="0.5" value="${t.hours}" required>
+        <input type="number" class="form-input" id="edit-task-hours" min="0.25" max="40" step="0.25" value="${t.hours}" required>
       </div>
       <div class="form-group">
         <label class="form-label">Al gedaan (uren)</label>
@@ -5001,7 +5343,7 @@ function editTask(e, planId, taskId) {
   const done = parseFloat(document.getElementById('edit-task-done').value);
   t.subject = document.getElementById('edit-task-subject').value;
   t.title = document.getElementById('edit-task-title').value.trim() || t.title;
-  t.hours = isNaN(hours) ? t.hours : Math.min(40, Math.max(0.5, hours));
+  t.hours = isNaN(hours) ? t.hours : Math.min(40, Math.max(HOUR_STEP, roundQuarter(hours)));
   t.hoursDone = isNaN(done) ? (t.hoursDone || 0) : Math.min(t.hours, Math.max(0, done));
   t.done = t.hoursDone >= t.hours;
   t.priority = !!document.getElementById('edit-task-prio').checked;
@@ -5020,7 +5362,8 @@ function openLogHoursModal(planId, taskId) {
     <p style="margin:0 0 4px;font-weight:600">${esc(t.title)}</p>
     <p style="margin:0 0 14px;color:var(--gray-500);font-size:0.85rem">${fmtHours(done)} van ${fmtHours(t.hours)} gedaan</p>
     <div class="log-quick-row">
-      <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},0.5)">+0,5 uur</button>
+      <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},0.25)">+15 min</button>
+      <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},0.5)">+30 min</button>
       <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},1)">+1 uur</button>
       <button class="btn btn-outline" onclick="logTaskHours(${planId},${taskId},2)">+2 uur</button>
     </div>

@@ -1111,6 +1111,14 @@ function addDays(d, n) {
   r.setDate(r.getDate() + n);
   return r;
 }
+// Tijd plannen we per kwartier. Een kwartiertje leren is prima in te
+// plannen, en alles wat met uren rekent gebruikt deze twee dingen, zodat er
+// nergens per ongeluk op halve uren wordt afgerond.
+const HOUR_STEP = 0.25;              // 15 minuten
+function roundQuarter(h) {
+  return Math.round((parseFloat(h) || 0) * 4) / 4;
+}
+
 // Tijd zoals je het zelf zou zeggen: "45 min", "2 uur", "1 uur 30 min".
 // Nooit "0,8 uur" — dat rekent niemand in zijn hoofd om.
 function fmtHours(h) {
@@ -1136,10 +1144,61 @@ function slotHours(s) { return Math.max(0, timeToMin(s.end) - timeToMin(s.start)
 //   plan.commitments = [ { id, day, start, end, label } ]
 // ============================================================
 
+function isTimeString(v) {
+  return typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v);
+}
+
+// Het dagvenster: binnen deze tijden wil je werken. "Niet voor 09:00" en
+// "niet na 21:00" gelden voor élke dag, boven op je weekpatroon.
+function dayWindow(plan) {
+  const p = effectivePrefs(plan);
+  return {
+    from: isTimeString(p.notBefore) ? timeToMin(p.notBefore) : null,
+    to: isTimeString(p.notAfter) ? timeToMin(p.notAfter) : null,
+  };
+}
+
+// Snijdt tijdblokken af op je dagvenster.
+function clipToWindow(plan, slots) {
+  const w = dayWindow(plan);
+  if (w.from == null && w.to == null) return slots;
+  return slots
+    .map(b => {
+      let a = timeToMin(b.start);
+      let z = timeToMin(b.end);
+      if (w.from != null) a = Math.max(a, w.from);
+      if (w.to != null) z = Math.min(z, w.to);
+      return { start: a, end: z };
+    })
+    .filter(b => b.end - b.start >= 10)
+    .map(b => ({ start: minToTime(b.start), end: minToTime(b.end) }));
+}
+
 function commitmentsOn(plan, jsDay) {
   return (Array.isArray(plan.commitments) ? plan.commitments : [])
     .filter(c => c && c.day === jsDay && c.start && c.end && timeToMin(c.end) > timeToMin(c.start))
     .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+}
+
+// Eenmalige bezigheden: iets dat op één datum valt (tandarts, feestje, een
+// langere pauze omdat je even weg moet). Vaste bezigheden komen elke week
+// terug, deze precies één keer.
+//   plan.busy = { '2026-11-07': [ { id, start, end, label } ] }
+function busyOn(plan, d) {
+  const list = (plan.busy && plan.busy[dateKey(d)]) || [];
+  return list
+    .filter(b => b && b.start && b.end && timeToMin(b.end) > timeToMin(b.start))
+    .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+}
+
+function busyHours(plan, d) {
+  return busyOn(plan, d)
+    .reduce((sum, b) => sum + (timeToMin(b.end) - timeToMin(b.start)) / 60, 0);
+}
+
+// Alles wat die dag bezet is: je vaste bezigheden én de eenmalige.
+function allBusyOn(plan, d) {
+  return commitmentsOn(plan, new Date(d).getDay()).concat(busyOn(plan, d));
 }
 
 function commitmentHours(plan, jsDay) {
@@ -1182,8 +1241,10 @@ function weeklySlotsFor(plan, jsDay) {
 function daySlots(plan, d) {
   const jsDay = new Date(d).getDay();
   const own = (plan.slots && plan.slots[dateKey(d)]) || [];
-  if (own.length) return subtractBusy(own, commitmentsOn(plan, jsDay));
-  return weeklySlotsFor(plan, jsDay);
+  // Weekpatroon of eigen tijden, dan je vaste bezigheden eruit, dan de
+  // eenmalige van juist deze dag, en tot slot afgesneden op je dagvenster.
+  const base = own.length ? subtractBusy(own, commitmentsOn(plan, jsDay)) : weeklySlotsFor(plan, jsDay);
+  return clipToWindow(plan, subtractBusy(base, busyOn(plan, d)));
 }
 
 // ============================================================
@@ -1200,6 +1261,8 @@ const defaultPlanPrefs = {
   peak: 'any',          // 'morning' | 'afternoon' | 'evening' | 'any'
   hardSubjects: [],     // vakken die extra tijd en je scherpste blokken krijgen
   blockedDays: [],      // weekdagen (0=zo ... 6=za) waarop je niet leert
+  notBefore: null,      // niet leren vóór deze tijd, bv. '09:00'
+  notAfter: null,       // en niet meer ná deze tijd, bv. '21:00'
 };
 
 // Starttijd voor dagen zonder eigen tijdblokken, op basis van je topmoment.
@@ -1217,6 +1280,8 @@ function planPrefs(plan) {
   if (!peakStartTime[p.peak]) p.peak = 'any';
   p.hardSubjects = Array.isArray(p.hardSubjects) ? p.hardSubjects.slice() : [];
   p.blockedDays = Array.isArray(p.blockedDays) ? p.blockedDays.slice() : [];
+  if (!isTimeString(p.notBefore)) p.notBefore = null;
+  if (!isTimeString(p.notAfter)) p.notAfter = null;
   return p;
 }
 
@@ -1224,7 +1289,7 @@ function planPrefs(plan) {
 // Elke regel is een klein, gecontroleerd object. Vrije tekst wordt eerst
 // omgezet naar zulke regels (lokaal of door de AI); het schema zelf wordt
 // altijd door de code hieronder gebouwd, nooit door tekst van buiten.
-const steerKinds = ['blockDay', 'dayHours', 'subjectDay', 'subjectHours', 'blockMinutes', 'breakMinutes', 'variety', 'peak', 'noWeekend'];
+const steerKinds = ['blockDay', 'dayHours', 'subjectDay', 'subjectHours', 'blockMinutes', 'breakMinutes', 'variety', 'peak', 'noWeekend', 'notBefore', 'notAfter'];
 
 function steerList(plan) {
   return Array.isArray(plan && plan.steer) ? plan.steer : [];
@@ -1241,6 +1306,8 @@ function effectivePrefs(plan) {
     else if (r.kind === 'peak' && peakStartTime[r.value]) p.peak = r.value;
     else if (r.kind === 'blockDay' && r.day != null) block(r.day);
     else if (r.kind === 'noWeekend') { block(0); block(6); }
+    else if (r.kind === 'notBefore' && isTimeString(r.time)) p.notBefore = r.time;
+    else if (r.kind === 'notAfter' && isTimeString(r.time)) p.notAfter = r.time;
   });
   return p;
 }
@@ -1329,7 +1396,12 @@ function availabilityFor(plan, d) {
       : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2);
     // Zonder tijdblokken weten we niet wannéér je training valt, dus gaat de
     // duur gewoon van je beschikbare uren af.
-    hours = Math.max(0, hours - commitmentHours(plan, jsDay));
+    hours = Math.max(0, hours - commitmentHours(plan, jsDay) - busyHours(plan, d));
+    // In een dagvenster van 16:00 tot 21:00 passen nooit meer dan 5 uur.
+    const win = dayWindow(plan);
+    if (win.from != null && win.to != null) {
+      hours = Math.min(hours, Math.max(0, (win.to - win.from) / 60));
+    }
   }
   // Stuurregel "maximaal X uur op maandag" verlaagt het dagbudget.
   steerList(plan).forEach(r => {
@@ -1443,6 +1515,20 @@ function parseSteerText(text, plan) {
     else if (/avond/.test(raw)) add({ kind: 'peak', value: 'evening', text: 'Leren in de avond' });
   }
 
+  // "niet voor 9:00" / "pas na 16:00" / "niet na 21:00" / "stop om 22:00"
+  const tijd = (m) => {
+    if (!m) return null;
+    const u = Math.min(23, parseInt(m[1]));
+    const mm = m[2] ? Math.min(59, parseInt(m[2])) : 0;
+    return `${String(u).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  };
+  const voor = tijd(raw.match(/\b(?:niet|nooit)\s+(?:voor|v[oó]{2}r)\s+(\d{1,2})(?::(\d{2}))?/) ||
+                    raw.match(/\b(?:pas|vanaf|begin(?:nen)?)\s+(?:na\s+|om\s+)?(\d{1,2})(?::(\d{2}))?/));
+  if (voor) add({ kind: 'notBefore', time: voor, text: `Niet vóór ${voor}` });
+  const na = tijd(raw.match(/\b(?:niet|nooit)\s+(?:na|later dan)\s+(\d{1,2})(?::(\d{2}))?/) ||
+                  raw.match(/\b(?:stop(?:pen)?|klaar|tot)\s+(?:om\s+)?(\d{1,2})(?::(\d{2}))?/));
+  if (na) add({ kind: 'notAfter', time: na, text: `Niet ná ${na}` });
+
   // Vak op een dag wel of juist niet
   if (subject && days.length) {
     const avoid = negative || less;
@@ -1476,7 +1562,7 @@ function sameSteerTarget(a, b) {
 function scaleSubjectHours(plan, subject, factor) {
   (plan.tasks || []).forEach(t => {
     if (t.subject !== subject) return;
-    t.hours = Math.max(0.5, Math.round((t.hours || 0) * factor * 2) / 2);
+    t.hours = Math.max(HOUR_STEP, roundQuarter((t.hours || 0) * factor));
   });
 }
 
@@ -1491,6 +1577,7 @@ function applySteerRules(plan, rules) {
       if (!subjects[r.subject] || !r.factor) return;
       scaleSubjectHours(plan, r.subject, r.factor);
     }
+    if ((r.kind === 'notBefore' || r.kind === 'notAfter') && !isTimeString(r.time)) return;
     plan.steer = plan.steer.filter(x => !sameSteerTarget(x, r));
     plan.steer.push({ ...r, id: Date.now() * 1000 + Math.floor(Math.random() * 1000) });
     added++;
@@ -1513,10 +1600,36 @@ function buildDayBlocks(plan, day) {
   const seq = (day.blocks && day.blocks.length) ? day.blocks : (day.assignments || []);
   if (!seq.length) return [];
   const prefs = effectivePrefs(plan);
-  const slots = (day.slots && day.slots.length) ? day.slots : null;
+  let slots = (day.slots && day.slots.length) ? day.slots : null;
+
+  // Geen eigen tijdblokken, maar wel een dagvenster ("niet voor 09:00",
+  // "niet na 21:00")? Dan maken we van dat venster één tijdblok, zodat de
+  // indeling er nooit buiten valt.
+  if (!slots) {
+    const win = dayWindow(plan);
+    let start = timeToMin(peakStartTime[prefs.peak]);
+    if (win.from != null) start = Math.max(start, win.from);
+    if (win.to != null) {
+      // Past het werk niet meer vanaf je topmoment? Begin dan bij het begin
+      // van je venster in plaats van over de eindtijd heen te gaan.
+      const nodig = Math.round(seq.reduce((n, b) => n + (b.hours || 0) * 60, 0))
+        + prefs.breakMinutes * Math.max(0, seq.length - 1);
+      const vroegst = win.from != null ? win.from : 0;
+      if (start + nodig > win.to) start = Math.min(start, Math.max(vroegst, win.to - nodig));
+      if (start < vroegst) start = vroegst;
+      slots = [{ start: minToTime(start), end: minToTime(Math.max(start + 10, win.to)) }];
+    } else if (win.from != null) {
+      // Alleen een begintijd: geen einde nodig, we beginnen gewoon later.
+      slots = null;
+    }
+    day._windowStart = start;
+  }
+
   const out = [];
   let si = 0;
-  let cursor = slots ? timeToMin(slots[0].start) : timeToMin(peakStartTime[prefs.peak]);
+  let cursor = slots
+    ? timeToMin(slots[0].start)
+    : (day._windowStart != null ? day._windowStart : timeToMin(peakStartTime[prefs.peak]));
 
   // Schuif naar het eerstvolgende tijdblok met ruimte. False = dag is vol.
   const advance = () => {
@@ -1758,6 +1871,35 @@ function buildSchedule(plan) {
 
   const totalCapacity = days.reduce((s, d) => s + d.capacity, 0);
   return { days, overflow, unscheduled, manual, totalCapacity };
+}
+
+// Hoeveel tijd wil je aan dit vak besteden? Je eigen keuze gaat voor, anders
+// het standaardaantal uit de wizard; moeilijke vakken krijgen een derde meer.
+function targetHoursFor(plan, subject) {
+  if (plan.subjectHours && plan.subjectHours[subject] != null) {
+    return plan.subjectHours[subject];
+  }
+  let base = plan.defaultSubjectHours != null ? plan.defaultSubjectHours : 4;
+  const hard = (plan.prefs && plan.prefs.hardSubjects) || [];
+  if (hard.includes(subject)) base = base * 1.3;
+  return roundQuarter(base);
+}
+
+// Hoeveel uur je voor dit vak al als taken hebt ingevuld.
+function plannedHoursFor(plan, subject) {
+  return (plan.tasks || [])
+    .filter(t => t.subject === subject)
+    .reduce((sum, t) => sum + Math.max(0, t.hours || 0), 0);
+}
+
+// De vakken waarvoor je een toets hebt, in de volgorde waarin die toetsen
+// komen — zo loop je ze langs in de volgorde die voor jou logisch is.
+function subjectsByExamDate(plan) {
+  const seen = [];
+  [...(plan.exams || [])]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .forEach(e => { if (subjects[e.subject] && !seen.includes(e.subject)) seen.push(e.subject); });
+  return seen;
 }
 
 // Helpers voor het handmatige schema
