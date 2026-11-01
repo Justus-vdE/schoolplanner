@@ -4079,3 +4079,20 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700; color: var(--gray-600); font-size: 0.76rem;
 }
 .toggle-hint { display: block; width: 100%; margin-left: 24px; font-size: 0.72rem; font-weight: 400; color: var(--gray-400); }
+
+/* Suggestie: vandaag ligt vast, maar er kan meer */
+.dayplan-suggestie {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 12px;
+  border: 1px solid var(--gray-200); border-radius: var(--radius);
+  background: var(--gray-50); font-size: 0.85rem; color: var(--gray-700);
+}
+.dayplan-suggestie.urgent { background: #FEF3C7; border-color: #FCD34D; color: #92400E; }
+[data-theme="dark"] .dayplan-suggestie.urgent { background: #3A2A10; border-color: #78540F; color: #FCD34D; }
+.dayplan-knoppen { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dayplan-nee {
+  border: none; background: transparent; color: inherit; opacity: 0.75;
+  font-size: 0.8rem; text-decoration: underline; cursor: pointer;
+}
+.dayplan-nee:hover { opacity: 1; }

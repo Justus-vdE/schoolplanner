@@ -1154,6 +1154,29 @@ function slotHours(s) { return Math.max(0, timeToMin(s.end) - timeToMin(s.start)
 //   plan.commitments = [ { id, day, start, end, label } ]
 // ============================================================
 
+// --- Hoe laat is het nu? ---
+// Vandaag begint pas nú: wat voorbij is kun je niet meer inplannen, en de
+// uren die al verstreken zijn tellen niet meer mee als beschikbare tijd.
+// (nowOverride is er zodat tests een vaste tijd kunnen gebruiken.)
+let nowOverride = null;
+
+function currentMinutes() {
+  if (nowOverride != null) return nowOverride;
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+}
+
+// Het eerstvolgende hele kwartier, zodat blokken op nette tijden beginnen.
+function todayStartMin() {
+  return Math.min(24 * 60, Math.ceil(currentMinutes() / 15) * 15);
+}
+
+// Tot hoe laat je vandaag nog kunt: je eigen eindtijd, anders 22:00.
+function dayEndMin(plan) {
+  const w = dayWindow(plan);
+  return w.to != null ? w.to : 22 * 60;
+}
+
 function isTimeString(v) {
   return typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v);
 }
@@ -1254,7 +1277,16 @@ function daySlots(plan, d) {
   // Weekpatroon of eigen tijden, dan je vaste bezigheden eruit, dan de
   // eenmalige van juist deze dag, en tot slot afgesneden op je dagvenster.
   const base = own.length ? subtractBusy(own, commitmentsOn(plan, jsDay)) : weeklySlotsFor(plan, jsDay);
-  return clipToWindow(plan, subtractBusy(base, busyOn(plan, d)));
+  let uit = clipToWindow(plan, subtractBusy(base, busyOn(plan, d)));
+  // Is het vandaag? Dan valt alles wat al voorbij is af.
+  if (+startOfDay(d) === +startOfDay(today)) {
+    const nu = todayStartMin();
+    uit = uit
+      .map(b => ({ start: Math.max(timeToMin(b.start), nu), end: timeToMin(b.end) }))
+      .filter(b => b.end - b.start >= 10)
+      .map(b => ({ start: minToTime(b.start), end: minToTime(b.end) }));
+  }
+  return uit;
 }
 
 // ============================================================
@@ -1412,6 +1444,12 @@ function availabilityFor(plan, d) {
     if (win.from != null && win.to != null) {
       hours = Math.min(hours, Math.max(0, (win.to - win.from) / 60));
     }
+  }
+  // Vandaag: alleen de tijd die nog komt telt mee. Om 17:00 heb je geen hele
+  // dag meer, dus plannen we ook niet alsof dat zo is.
+  if (+startOfDay(d) === +startOfDay(today) && !sl.length) {
+    const resterend = Math.max(0, (dayEndMin(plan) - todayStartMin()) / 60);
+    hours = Math.min(hours, resterend);
   }
   // Stuurregel "maximaal X uur op maandag" verlaagt het dagbudget.
   steerList(plan).forEach(r => {
@@ -1641,6 +1679,8 @@ function buildDayBlocks(plan, day) {
     const win = dayWindow(plan);
     let start = timeToMin(peakStartTime[prefs.peak]);
     if (win.from != null) start = Math.max(start, win.from);
+    // Vandaag nooit in het verleden beginnen.
+    if (+startOfDay(day.date) === +startOfDay(today)) start = Math.max(start, todayStartMin());
     if (win.to != null) {
       // Past het werk niet meer vanaf je topmoment? Begin dan bij het begin
       // van je venster in plaats van over de eindtijd heen te gaan.
@@ -1662,6 +1702,7 @@ function buildDayBlocks(plan, day) {
   let cursor = slots
     ? timeToMin(slots[0].start)
     : (day._windowStart != null ? day._windowStart : timeToMin(peakStartTime[prefs.peak]));
+  if (+startOfDay(day.date) === +startOfDay(today)) cursor = Math.max(cursor, todayStartMin());
 
   // Schuif naar het eerstvolgende tijdblok met ruimte. False = dag is vol.
   const advance = () => {
@@ -1703,10 +1744,99 @@ function buildDayBlocks(plan, day) {
   return out;
 }
 
-// Verdeelt de taakuren over de beschikbare dagen vanaf vandaag t/m de
+// ============================================================
+// --- Je plan voor vandaag ligt vast ---
+// Je wil 's ochtends weten wat je vandaag doet en je daaraan houden. Dus:
+// zodra je dag begint, ligt de indeling van vandaag vast. Vink je iets af,
+// dan verdwijnt alleen dat blok — de rest blijft staan. Er schuift niets
+// weg en er komt niets bij. Zou een andere indeling beter zijn, dan vragen
+// we dat (zie dayPlanSuggestion), in plaats van het stilletjes te doen.
+//
+//   plan.dayPlan = { date: '2026-11-01', blocks: [{ taskId, hours }] }
+// ============================================================
+function dayPlanFor(plan) {
+  const dp = plan.dayPlan;
+  if (!dp || dp.date !== dateKey(startOfDay(today))) return null;
+  if (!Array.isArray(dp.blocks)) return null;
+  return dp;
+}
+
+// Legt de indeling van vandaag vast als dat nog niet gebeurd is.
+function ensureDayPlan(plan) {
+  if (dayPlanFor(plan)) return;
+  const vrij = buildSchedule(plan, { noLock: true });
+  const today0 = startOfDay(today);
+  const dag = vrij.days.find(d => +d.date === +today0);
+  plan.dayPlan = {
+    date: dateKey(today0),
+    blocks: dag ? dag.blocks.map(b => ({ taskId: b.taskId, hours: b.hours })) : [],
+  };
+  savePlans();
+}
+
+// Vink je iets af, dan verdwijnt dat blok uit je dag. Zo blijft de rest van
+// je dag exact staan in plaats van opnieuw verdeeld te worden.
+// Geeft terug hoeveel uur er uit je dag is gehaald.
+function consumeDayPlan(plan, taskId, hours) {
+  const dp = dayPlanFor(plan);
+  if (!dp) return 0;
+  let over = hours == null ? Infinity : Math.max(0, hours);
+  let weg = 0;
+  const uit = [];
+  dp.blocks.forEach(b => {
+    if (b.taskId !== taskId || over <= 0.0001) { uit.push(b); return; }
+    const af = Math.min(over, b.hours);
+    over -= af;
+    weg += af;
+    const rest = Math.round((b.hours - af) * 100) / 100;
+    if (rest > 0.0001) uit.push({ taskId: b.taskId, hours: rest });
+  });
+  dp.blocks = uit;
+  return Math.round(weg * 100) / 100;
+}
+
+// Opnieuw indelen omdat jij daarom vraagt.
+function refreshDayPlan(plan) {
+  delete plan.dayPlan;
+  ensureDayPlan(plan);
+}
+
+// Zou een andere indeling van vandaag beter zijn? Dan bieden we het aan.
+// We zeggen alleen iets als er écht iets te winnen is: er kan meer werk bij,
+// of er is werk bij gekomen dat vandaag áf moet.
+function dayPlanSuggestion(plan) {
+  const dp = dayPlanFor(plan);
+  if (!dp || dp.dismissed) return null;
+  const today0 = startOfDay(today);
+  const vast = dp.blocks.reduce((n, b) => n + Math.max(0, b.hours || 0), 0);
+  const vrij = buildSchedule(plan, { noLock: true });
+  const dag = vrij.days.find(d => +d.date === +today0);
+  const kan = dag ? dag.used : 0;
+
+  // Hoeveel zou er vandaag nog bij kunnen bovenop wat er nog vastligt?
+  const extra = Math.round((kan - vast) * 100) / 100;
+
+  // Is er werk bij gekomen dat vandaag áf moet en nog niet in je dag staat?
+  const vasteTaken = new Set(dp.blocks.map(b => b.taskId));
+  const urgent = dag
+    ? [...new Set(dag.blocks.filter(b => !vasteTaken.has(b.taskId)).map(b => b.taskId))]
+    : [];
+  const urgenteTaken = urgent
+    .map(id => (plan.tasks || []).find(t => t.id === id))
+    .filter(t => t && +taskDue(plan, t, planDeadline(plan)) <= +today0);
+
+  if (urgenteTaken.length) {
+    return { kind: 'urgent', hours: extra > 0 ? extra : 0, tasks: urgenteTaken };
+  }
+  if (extra > 0.2) return { kind: 'extra', hours: extra, tasks: [] };
+  return null;
+}
+
+// Verdeelt de taakuren over de beschikbare dagen vanaf vandaag t/m de// Verdeelt de taakuren over de beschikbare dagen vanaf vandaag t/m de
 // deadline. Vakken worden afgewisseld (blokken van max 1 uur, round-robin)
 // en elke taak wordt vóór de toets van het eigen vak gepland.
-function buildSchedule(plan) {
+function buildSchedule(plan, opts) {
+  const noLock = !!(opts && opts.noLock);
   const today0 = startOfDay(today);
   const deadline = planDeadline(plan);
 
@@ -1721,6 +1851,7 @@ function buildSchedule(plan) {
       date: new Date(d),
       key,
       capacity: Math.max(0, availabilityFor(plan, d) - loggedToday),
+      ruimteVandaag: 0,   // hoeveel er vandaag nog bij zou kunnen
       slots,
       used: 0,
       assignments: [],
@@ -1838,6 +1969,22 @@ function buildSchedule(plan) {
     for (let di = 0; di < days.length; di++) {
       const day = days[di];
       const jsDay = day.date.getDay();
+      // Vandaag ligt vast: we plaatsen precies de blokken die er 's ochtends
+      // stonden, voor zover die taken nog werk over hebben. Zo verdwijnt bij
+      // het afvinken alleen dát blok, en schuift de rest niet.
+      if (!noLock && +day.date === +today0) {
+        const dp = dayPlanFor(plan);
+        if (dp) {
+          dp.blocks.forEach(b => {
+            const it = items.find(i => i.task.id === b.taskId && i.rem > 0.0001);
+            if (!it) return;                    // taak is klaar: blok vervalt
+            const uren = Math.min(b.hours, it.rem);
+            if (uren > 0.0001) place(day, it, uren);
+          });
+          continue;   // vandaag ligt vast, er komt niets bij
+        }
+      }
+
       const doneToday = {};               // vak -> aantal blokken vandaag
       const ruimte = day.capacity - day.used;
       let free = ruimte;

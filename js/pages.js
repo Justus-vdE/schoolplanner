@@ -2849,6 +2849,9 @@ function catchUpPlan(planId) {
 }
 
 function renderPlanDetail(plan) {
+  // Vandaag ligt vast zodra je je planning opent, zodat hij niet verschuift
+  // terwijl je bezig bent.
+  ensureDayPlan(plan);
   const st = planStatus(plan);
   const lbl = statusLabel(st);
   const examD = planExamDate(plan);
@@ -3586,6 +3589,7 @@ function renderPlanScheduleView(plan, sched) {
 
   return `
     ${editBar}
+    ${renderDayPlanSuggestion(plan)}
     ${renderSteerBar(plan)}
     ${unschedBanner}
     ${renderWeekStrip(sched, plan)}
@@ -3656,6 +3660,62 @@ function renderPlanScheduleView(plan, sched) {
       }).join('')}
     </div>
   `;
+}
+
+// Vandaag ligt vast. Zou een andere indeling beter zijn, dan vragen we het —
+// we doen het niet zomaar, want je hebt er niet altijd tijd voor.
+function renderDayPlanSuggestion(plan) {
+  const sug = dayPlanSuggestion(plan);
+  if (!sug) return '';
+  const naam = (t) => {
+    const s = subjects[t.subject];
+    return s ? s.name : 'een vak';
+  };
+  if (sug.kind === 'urgent') {
+    const vakken = [...new Set(sug.tasks.map(naam))].join(' en ');
+    return `
+      <div class="dayplan-suggestie urgent">
+        <div>
+          ${icon('clock', 14)} <strong>${esc(vakken)}</strong> moet vandaag nog af, maar staat niet in je dag.
+        </div>
+        <div class="dayplan-knoppen">
+          <button class="btn btn-primary btn-sm" onclick="acceptDayPlan(${plan.id})">Dag bijwerken</button>
+          <button class="dayplan-nee" onclick="dismissDayPlan(${plan.id})">Laat maar</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="dayplan-suggestie">
+      <div>
+        ${icon('clock', 14)} Je hebt vandaag nog <strong>${fmtHours(sug.hours)}</strong> over.
+        Wil je alvast verder?
+      </div>
+      <div class="dayplan-knoppen">
+        <button class="btn btn-outline btn-sm" onclick="acceptDayPlan(${plan.id})">Ja, erbij plannen</button>
+        <button class="dayplan-nee" onclick="dismissDayPlan(${plan.id})">Nee, klaar voor vandaag</button>
+      </div>
+    </div>`;
+}
+
+function acceptDayPlan(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  refreshDayPlan(p);
+  renderPage('planner');
+  showToast('Je dag is bijgewerkt ✓');
+}
+
+// "Laat maar": we vragen het vandaag niet nog eens.
+function dismissDayPlan(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const dp = dayPlanFor(p);
+  if (dp) {
+    dp.dismissed = true;
+    savePlans();
+  }
+  renderPage('planner');
+  showToast('Oké — dit is je dag 👍');
 }
 
 // --- De stuurbalk: typ wat je anders wilt ---
@@ -5425,6 +5485,9 @@ function openLogHoursModal(planId, taskId) {
 }
 
 function logTaskHours(planId, taskId, delta) {
+  // Dit blok is gedaan: haal het uit je dag, zodat de rest blijft staan.
+  const plan0 = getPlan(planId);
+  if (plan0 && delta > 0) consumeDayPlan(plan0, taskId, delta);
   const p = getPlan(planId);
   if (!p) return;
   const t = p.tasks.find(x => x.id === taskId);
@@ -5462,7 +5525,11 @@ function toggleTaskDone(planId, taskId) {
   const before = Math.min(t.hours, Math.max(0, t.hoursDone || 0));
   t.done = !(t.hoursDone >= t.hours);
   t.hoursDone = t.done ? t.hours : 0;
-  recordDailyLog(p, t.hoursDone - before);
+  // Taak klaar: zijn blokken verdwijnen uit vandaag, de rest van je dag
+  // blijft staan. Als tijd van vandaag tellen alleen de uren die er vandaag
+  // ook echt voor stonden — niet het hele restant van de taak.
+  if (t.done) recordDailyLog(p, consumeDayPlan(p, taskId, null));
+  else recordDailyLog(p, -before);
   if (t.done) updateStreak();
   savePlans();
   renderPage('planner');
@@ -5483,6 +5550,7 @@ function recordDailyLog(plan, deltaHours) {
 function deleteTask(planId, taskId) {
   const p = getPlan(planId);
   if (!p) return;
+  consumeDayPlan(p, taskId, null);
   p.tasks = p.tasks.filter(t => t.id !== taskId);
   savePlans();
   renderPage('planner');
