@@ -1780,6 +1780,25 @@ function buildSchedule(plan) {
       return n;
     };
 
+    // Hoeveel uur heeft deze taak nog beschikbaar tot zijn eigen deadline?
+    const ruimteVoorTaak = (vanaf, due) => {
+      let u = 0;
+      for (let j = vanaf; j < days.length; j++) {
+        if (days[j].date > due) break;
+        u += Math.max(0, days[j].capacity - days[j].used);
+      }
+      return u;
+    };
+
+    // Zit een taak in de knel? Dan past zijn werk niet meer in de dagen die
+    // hij nog heeft. Zulk werk gaat vóór werk dat nog ruim de tijd heeft:
+    // vooruit leren voor een toets van woensdag terwijl je voor de toets van
+    // morgen tijd tekort komt, is precies wat je niet wil.
+    const inDeKnel = (it, vanaf) => {
+      const ruimte = ruimteVoorTaak(vanaf, it.due);
+      return it.rem > ruimte - 0.0001;
+    };
+
     // spreiden = elke dag alleen zijn eerlijke deel vullen in plaats van tot
     // de rand. Zonder dat propt hij de eerste dagen vol en blijf je daarna
     // dagen met niks over, ook al is je toets pas vrijdag.
@@ -1790,7 +1809,10 @@ function buildSchedule(plan) {
       const doneToday = {};               // vak -> aantal blokken vandaag
       const ruimte = day.capacity - day.used;
       let free = ruimte;
-      if (spreiden) {
+      // Haast? Dan niet spreiden maar de dag gebruiken die je hebt.
+      const haast = items.some(it => it.rem > 0.0001 && it.due >= day.date
+        && (+it.due === +day.date || inDeKnel(it, di)));
+      if (spreiden && !haast) {
         // Elke taak draagt zijn dagdeel bij: resterende uren gedeeld door de
         // dagen die hij nog heeft. Afgerond op hele blokken, zodat je geen
         // rare stukjes krijgt.
@@ -1819,7 +1841,15 @@ function buildSchedule(plan) {
         // de toets nog ver weg is tijd wegpikt van de toets van morgen.
         // Is dat werk klaar en heb je tijd over? Dan gaat de rest gewoon door.
         const mustToday = pool.filter(i => +i.due === +day.date);
-        if (mustToday.length) pool = mustToday;
+        if (mustToday.length) {
+          pool = mustToday;
+        } else {
+          // Niets dat vandaag áf moet, maar zit er wel werk in de knel? Dan
+          // wijkt het werk dat nog ruim de tijd heeft. Dat doet zijn uren
+          // later gewoon, want die dagen heeft het nog.
+          const knel = pool.filter(i => inDeKnel(i, di));
+          if (knel.length) pool = knel;
+        }
 
         if (keepTogether && last) {
           const same = pool.filter(i => i.task.subject === last);
