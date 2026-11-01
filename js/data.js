@@ -1879,8 +1879,16 @@ function buildSchedule(plan) {
           // Niets dat vandaag áf moet, maar zit er wel werk in de knel? Dan
           // wijkt het werk dat nog ruim de tijd heeft. Dat doet zijn uren
           // later gewoon, want die dagen heeft het nog.
+          //
+          // Eén grens daarop: een vak waarvan de toets LATER valt mag nooit
+          // een vak wegdrukken waarvan de toets EERDER valt. Anders ging je
+          // dinsdag vol met vrijdag-toetsen terwijl je donderdag ook nog een
+          // toets had, en werd dat vak naar zijn allerlaatste dag geschoven.
           const knel = pool.filter(i => inDeKnel(i, di));
-          if (knel.length) pool = knel;
+          if (knel.length) {
+            const vroegsteKnel = Math.min(...knel.map(i => +i.due));
+            pool = pool.filter(i => inDeKnel(i, di) || +i.due <= vroegsteKnel);
+          }
         }
 
         if (keepTogether && last) {
