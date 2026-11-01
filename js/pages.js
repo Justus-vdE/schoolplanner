@@ -2785,35 +2785,67 @@ function toggleStudyOrder(planId) {
 
 // Verdeelt de uren die nu niet passen ("achterstand") over de komende dagen
 // door je beschikbare tijd per dag wat op te hogen.
+// Meer tijd vrijmaken waar het tekort zit. Per vak loopt het tekort tot de
+// eigen toets, dus extra tijd ná die toets helpt dat vak niets — we hogen
+// alleen de dagen vóór die toets op.
 function catchUpPlan(planId) {
   const p = getPlan(planId);
   if (!p) return;
   const st = planStatus(p);
-  const need = st.overflow;
-  if (need <= 0.05) { alert('Je hebt genoeg tijd ingepland — niks bij te plannen.'); return; }
+  if (st.overflow <= 0.05) { alert('Je hebt genoeg tijd ingepland — niks bij te plannen.'); return; }
 
   const today0 = startOfDay(today);
-  const deadline = planDeadline(p);
-  const days = [];
-  for (let d = new Date(today0); d <= deadline; d = addDays(d, 1)) days.push(new Date(d));
-  if (!days.length) { alert('Er zijn geen dagen meer tot je deadline om over te verdelen.'); return; }
+  const win = dayWindow(p);
+  // Binnen een dagvenster kun je nooit meer kwijt dan dat venster lang is.
+  const maxPerDag = (win.from != null && win.to != null)
+    ? Math.max(0, (win.to - win.from) / 60)
+    : 16;
 
-  const extra = need / days.length;
-  if (!p.availability) p.availability = {};
-  let bumped = 0;
-  days.forEach(d => {
-    // Dagen met vaste tijdblokken laten we ongemoeid (die tijd ligt al vast).
-    if (daySlots(p, d).length) return;
-    const k = dateKey(d);
-    const cur = availabilityFor(p, d);
-    p.availability[k] = roundQuarter(cur + extra); // afronden op kwartieren
-    bumped++;
+  const extraPerDag = {};     // datum -> extra uren
+  const geholpen = [];
+  const vast = [];
+  (st.shortages || []).forEach(sh => {
+    const due = startOfDay(new Date(sh.due));
+    const dagen = [];
+    for (let d = new Date(today0); d <= due; d = addDays(d, 1)) {
+      if (daySlots(p, d).length) continue;   // eigen tijdblokken laten we staan
+      dagen.push(dateKey(d));
+    }
+    const naam = subjects[sh.subject] ? subjects[sh.subject].name : 'dit vak';
+    if (!dagen.length) { vast.push(naam); return; }
+    const perDag = sh.hours / dagen.length;
+    dagen.forEach(k => { extraPerDag[k] = (extraPerDag[k] || 0) + perDag; });
+    geholpen.push(naam);
   });
-  if (!bumped) { alert('Al je dagen hebben vaste tijdblokken — pas die handmatig aan.'); return; }
 
+  const keys = Object.keys(extraPerDag);
+  if (!keys.length) {
+    alert(vast.length
+      ? `Voor ${vast.join(' en ')} staan alle dagen tot de toets al vast met eigen tijdblokken. Pas die blokken aan, of verlaag het aantal uren voor dat vak.`
+      : 'Er zijn geen dagen meer om tijd op vrij te maken.');
+    return;
+  }
+
+  if (!p.availability) p.availability = {};
+  let bereikt = 0;
+  keys.forEach(k => {
+    const nu = availabilityFor(p, new Date(k + 'T00:00:00'));
+    const nieuw = Math.min(maxPerDag, roundQuarter(nu + extraPerDag[k]));
+    if (nieuw > nu + 0.001) bereikt++;
+    p.availability[k] = nieuw;
+  });
   savePlans();
   renderPage('planner');
-  alert(`✓ ${fmtHours(need)} verdeeld over ${bumped} dag${bumped !== 1 ? 'en' : ''} — gemiddeld ${fmtHours(extra)} extra per dag. Pas losse dagen gerust nog aan bij "Beschikbare tijd".`);
+
+  const na = planStatus(getPlan(planId));
+  let bericht = `✓ Meer tijd vrijgemaakt op ${bereikt} dag${bereikt !== 1 ? 'en' : ''} vóór je toets${geholpen.length ? ` van ${geholpen.join(' en ')}` : ''}.`;
+  if (na.overflow > 0.05) {
+    bericht += `\n\nEr past nog steeds ${fmtHours(na.overflow)} niet. Je dagen tot die toets zitten vol — verlaag het aantal uren voor dat vak, of verruim je dagvenster.`;
+  }
+  if (vast.length) {
+    bericht += `\n\nVoor ${vast.join(' en ')} staan alle dagen vast met eigen tijdblokken; die moet je zelf aanpassen.`;
+  }
+  alert(bericht);
 }
 
 function renderPlanDetail(plan) {
@@ -2874,8 +2906,8 @@ function renderPlanDetail(plan) {
       </div>
       ${st.overflow > 0 ? `
         <div class="plan-warning catch-up">
-          <div>${icon('clock', 14)} Je hebt <strong>${fmtHours(st.overflow)}</strong> te weinig ingepland.</div>
-          <button class="btn btn-primary btn-sm" onclick="catchUpPlan(${plan.id})">${icon('calendar', 13)} Verdeel over de komende dagen</button>
+          <div>${icon('clock', 14)} ${shortageText(st)}</div>
+          <button class="btn btn-primary btn-sm" onclick="catchUpPlan(${plan.id})">${icon('calendar', 13)} Meer tijd vrijmaken</button>
         </div>` : ''}
     </div>
 

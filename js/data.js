@@ -1698,6 +1698,7 @@ function buildSchedule(plan) {
 
   let overflow = 0;
   let unscheduled = 0;
+  let shortages = [];   // per vak: wat past niet meer vóór die toets
   const manual = !!plan.manualSchedule;
 
   if (manual) {
@@ -1768,10 +1769,40 @@ function buildSchedule(plan) {
       subjDue[i.task.subject] = cur != null ? Math.min(cur, i.due) : i.due;
     });
 
-    for (const day of days) {
+    // Hoeveel dagen mét tijd heeft deze taak nog, vanaf dag 'vanaf' tot en
+    // met zijn eigen deadline? Daarmee verdelen we zijn uren eerlijk.
+    const dagenVoorTaak = (vanaf, due) => {
+      let n = 0;
+      for (let j = vanaf; j < days.length; j++) {
+        if (days[j].date > due) break;
+        if (days[j].capacity - days[j].used > 0.0001) n++;
+      }
+      return n;
+    };
+
+    // spreiden = elke dag alleen zijn eerlijke deel vullen in plaats van tot
+    // de rand. Zonder dat propt hij de eerste dagen vol en blijf je daarna
+    // dagen met niks over, ook al is je toets pas vrijdag.
+    const vulDagen = (spreiden) => {
+    for (let di = 0; di < days.length; di++) {
+      const day = days[di];
       const jsDay = day.date.getDay();
       const doneToday = {};               // vak -> aantal blokken vandaag
-      let free = day.capacity - day.used;
+      const ruimte = day.capacity - day.used;
+      let free = ruimte;
+      if (spreiden) {
+        // Elke taak draagt zijn dagdeel bij: resterende uren gedeeld door de
+        // dagen die hij nog heeft. Afgerond op hele blokken, zodat je geen
+        // rare stukjes krijgt.
+        let deel = 0;
+        items.forEach(it => {
+          if (it.rem <= 0.0001 || it.due < day.date) return;
+          const n = dagenVoorTaak(di, it.due);
+          deel += n > 0 ? it.rem / n : it.rem;
+        });
+        const inBlokken = Math.ceil(deel / blockH - 0.0001) * blockH;
+        free = Math.min(ruimte, Math.max(0, inBlokken));
+      }
       let last = null;
       let guard = 0;
       day.assignments.forEach(a => { doneToday[a.subject] = (doneToday[a.subject] || 0) + 1; });
@@ -1862,15 +1893,32 @@ function buildSchedule(plan) {
         last = it.task.subject;
       }
     }
-    // Wat nergens meer past (vóór de eigen toets/deadline) telt als tekort
+    };
+
+    vulDagen(true);    // eerst netjes spreiden over je dagen
+    vulDagen(false);   // dan inhalen wat vóór een deadline nog moest
+
+    // Wat nergens meer past vóór de eigen toets telt als tekort. We houden
+    // per vak bij hoeveel, want "te weinig tijd" is pas bruikbaar als je
+    // weet vóór welke toets het niet meer past.
     overflow = items.reduce((s, i) => s + i.rem, 0);
+    const perVak = {};
+    items.forEach(i => {
+      if (i.rem <= 0.0001) return;
+      if (!perVak[i.task.subject]) perVak[i.task.subject] = { hours: 0, due: i.due };
+      perVak[i.task.subject].hours += i.rem;
+      if (i.due < perVak[i.task.subject].due) perVak[i.task.subject].due = i.due;
+    });
+    shortages = Object.keys(perVak)
+      .map(k => ({ subject: k, hours: Math.round(perVak[k].hours * 100) / 100, due: perVak[k].due }))
+      .sort((a, b) => a.due - b.due);
   }
 
   // Zet de blokken van elke dag om in concrete tijden met pauzes ertussen.
   days.forEach(day => { day.timed = buildDayBlocks(plan, day); });
 
   const totalCapacity = days.reduce((s, d) => s + d.capacity, 0);
-  return { days, overflow, unscheduled, manual, totalCapacity };
+  return { days, overflow, unscheduled, manual, totalCapacity, shortages };
 }
 
 // Hoeveel tijd wil je aan dit vak besteden? Je eigen keuze gaat voor, anders
@@ -1964,6 +2012,7 @@ function planStatus(plan) {
     // Past alles wat je nog moet doen nog in de tijd die je hebt?
     fits: sched.overflow <= 0.05,
     capacityLeft: sched.totalCapacity,
+    shortages: sched.shortages || [],
     expectedByToday,
     diff,
     onSchedule: diff >= -0.001,
@@ -1991,17 +2040,41 @@ function statusLabel(st) {
   if (st.totalNeeded === 0) return { text: 'Nog geen taken', cls: 'neutral' };
   if (st.pct >= 100) return { text: 'Helemaal klaar! 🎉', cls: 'ahead' };
 
-  const behind = Math.max(0, -st.diff);
+  // Past er werk niet meer vóór zijn eigen toets? Dat is het belangrijkste
+  // dat je moet weten — ook als je verder prima op schema loopt.
+  const tekort = (st.shortages || [])[0];
+  if (tekort) {
+    const naam = subjects[tekort.subject] ? subjects[tekort.subject].name : 'een vak';
+    return {
+      text: st.shortages.length > 1
+        ? `${st.shortages.length} vakken passen niet meer vóór hun toets`
+        : `${naam} past niet meer vóór de toets`,
+      cls: 'behind',
+    };
+  }
 
+  const behind = Math.max(0, -st.diff);
   if (st.diff > 0.25) {
     return { text: `${fmtHours(st.diff)} vóór op schema — lekker bezig! 🎉`, cls: 'ahead' };
   }
   if (behind <= 0.25) {
     return { text: 'Precies op schema — zo komt het goed 👍', cls: 'ontrack' };
   }
-  // Je loopt achter. Past het nog? Dan is dat geen reden tot paniek.
-  if (st.fits) {
-    return { text: `${fmtHours(behind)} in te halen — je hebt nog tijd genoeg`, cls: 'ontrack' };
+  // Je loopt achter, maar alles past nog: dat is geen reden tot paniek.
+  return { text: `${fmtHours(behind)} in te halen — je hebt nog tijd genoeg`, cls: 'ontrack' };
+}
+
+// "Te weinig tijd" is pas bruikbaar als je weet vóór welke toets het niet
+// meer past. Je hebt misschien 40 uur over, maar als die ná de natuurkunde-
+// toets vallen, helpt dat je voor natuurkunde niets.
+function shortageText(st) {
+  const list = st.shortages || [];
+  if (!list.length) return '';
+  const naam = (k) => (subjects[k] ? subjects[k].name : 'dit vak');
+  if (list.length === 1) {
+    const s0 = list[0];
+    return `Voor <strong>${naam(s0.subject)}</strong> past ${fmtHours(s0.hours)} niet meer vóór de toets van ${formatDate(new Date(s0.due))}.`;
   }
-  return { text: `${fmtHours(behind)} achter — je komt tijd tekort`, cls: 'behind' };
+  const eerste = list.slice(0, 3).map(x => `${naam(x.subject)} (${fmtHours(x.hours)})`).join(', ');
+  return `Bij ${list.length} vakken past niet alles meer vóór de toets: ${eerste}${list.length > 3 ? ' en meer' : ''}.`;
 }
