@@ -2921,9 +2921,12 @@ function renderPlanDetail(plan) {
           <div class="card-title">${icon('clock')} Beschikbare tijd</div>
         </div>
         <div class="form-group" style="margin-bottom:14px">
-          <label class="form-label">Standaard uren per dag</label>
-          <input type="number" class="form-input" min="0" max="16" step="0.5" value="${plan.defaultDailyHours}"
-            onchange="updatePlanField(${plan.id},'defaultDailyHours',Math.max(0,parseFloat(this.value)||0))">
+          <label class="form-label">Standaard tijd per dag</label>
+          ${stepper(
+            fmtHours(plan.defaultDailyHours),
+            `updatePlanField(${plan.id},'defaultDailyHours',${Math.round((plan.defaultDailyHours - 0.5) * 10) / 10})`,
+            `updatePlanField(${plan.id},'defaultDailyHours',${Math.round((plan.defaultDailyHours + 0.5) * 10) / 10})`,
+            plan.defaultDailyHours > 0, plan.defaultDailyHours < 16)}
           <span class="form-hint">Geldt voor dagen waarvoor je hieronder niets anders invult.</span>
         </div>
 
@@ -3061,11 +3064,15 @@ function renderWeeklyPlanner(plan) {
         <span class="weekly-day">${weekdayShort[d]}</span>
         ${slots.length
           ? `<span class="weekly-derived" title="Berekend uit je tijdblokken">${fmtHours(shown)}</span>`
-          : `<input type="number" class="weekly-input ${own ? 'override' : ''}" min="0" max="16" step="0.5"
-               value="${own ? w.hours : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2)}"
-               title="Uren die je deze weekdag kunt leren"
-               onchange="setWeeklyHours(${plan.id},${d},this.value)">
-             <span class="weekly-unit">uur</span>`}
+          : (() => {
+              const cur = own ? w.hours : (plan.defaultDailyHours != null ? plan.defaultDailyHours : 2);
+              const r = (n) => Math.round(n * 10) / 10;
+              return stepper(
+                `<span class="${own ? 'own' : ''}">${fmtHours(Math.max(0, cur - commitmentHours(plan, d)))}</span>`,
+                `setWeeklyHours(${plan.id},${d},${r(cur - 0.5)})`,
+                `setWeeklyHours(${plan.id},${d},${r(cur + 0.5)})`,
+                cur > 0, cur < 16);
+            })()}
         <button class="availability-slot-btn" onclick="openWeeklySlotModal(${plan.id},${d})" title="Van hoe laat tot hoe laat">${icon('clock', 13)} tijd</button>
         <div class="weekly-chips">
           ${slots.map((b, i) => `<span class="slot-chip">${b.start}–${b.end}<button onclick="removeWeeklySlot(${plan.id},${d},${i})" title="Verwijderen">&times;</button></span>`).join('')}
@@ -3480,14 +3487,16 @@ function renderSteerBar(plan) {
         <span class="steer-sub">${prefs.variety ? 'afwisselend' : 'per vak'} &middot; ${peakLabels[prefs.peak]}</span>
       </div>
       <div class="steer-nums">
-        <label>Blok
-          <input type="number" min="15" max="180" step="5" value="${prefs.blockMinutes}"
-            onchange="setBlockMinutes(${plan.id},this.value)"> min
-        </label>
-        <label>Pauze
-          <input type="number" min="0" max="60" step="5" value="${prefs.breakMinutes}"
-            onchange="setBreakMinutes(${plan.id},this.value)"> min
-        </label>
+        <div><span class="stepper-label">Blok</span>${stepper(
+          prefs.blockMinutes + ' min',
+          `setBlockMinutes(${plan.id},${prefs.blockMinutes - 5})`,
+          `setBlockMinutes(${plan.id},${prefs.blockMinutes + 5})`,
+          prefs.blockMinutes > 15, prefs.blockMinutes < 180)}</div>
+        <div><span class="stepper-label">Pauze</span>${stepper(
+          prefs.breakMinutes === 0 ? 'geen' : prefs.breakMinutes + ' min',
+          `setBreakMinutes(${plan.id},${prefs.breakMinutes - 5})`,
+          `setBreakMinutes(${plan.id},${prefs.breakMinutes + 5})`,
+          prefs.breakMinutes > 0, prefs.breakMinutes < 60)}</div>
       </div>
       <div class="steer-row">
         <input type="text" class="form-input steer-input" id="steer-input-${plan.id}"
@@ -4299,10 +4308,29 @@ function openAddPlanModal() {
   `);
 }
 
+// Plus/min-knop in plaats van de pijltjes van een getalveld. Die pijltjes
+// reageren op Safari en op een telefoon pas als je ergens anders klikt, en op
+// een touchscreen zijn ze veel te klein. Dit werkt overal, en toont de waarde
+// als leesbare tijd ("2 uur 30 min") in plaats van als kaal getal.
+function stepper(label, decCall, incCall, canDec, canInc) {
+  return `
+    <div class="stepper">
+      <button type="button" class="stepper-btn" onclick="${decCall}" ${canDec ? '' : 'disabled'} title="Minder">&minus;</button>
+      <span class="stepper-value">${label}</span>
+      <button type="button" class="stepper-btn" onclick="${incCall}" ${canInc ? '' : 'disabled'} title="Meer">&plus;</button>
+    </div>`;
+}
+
 // ===== "Maak mijn planning" — alles automatisch op basis van je toetsen =====
 let genExams = [];
 let genHard = [];          // vakken die je moeilijk vindt
 let genBlockedDays = [];   // weekdagen waarop je niet kunt leren
+let genDaily = 2;          // uren per dag
+let genPerExam = 4;        // standaard uren per toets
+let genHours = {};         // vak -> eigen aantal uren (als je het per vak zet)
+let genBlock = 45;         // bloklengte in minuten
+let genBreak = 10;         // pauze in minuten
+let genAutoTasks = false;  // standaardtaken laten maken? standaard niet
 
 function openGeneratePlanModal() {
   // Begin met je aankomende toetsen uit de Toetsen-pagina (scheelt invullen)
@@ -4315,6 +4343,12 @@ function openGeneratePlanModal() {
   if (genExams.length === 0) genExams = [{ subject: '', date: '', title: '' }];
   genHard = [];
   genBlockedDays = [];
+  genDaily = 2;
+  genPerExam = 4;
+  genHours = {};
+  genBlock = 45;
+  genBreak = 10;
+  genAutoTasks = false;
 
   openModal('✨ Maak mijn planning', `
     <p style="color:var(--gray-500);font-size:0.88rem;margin:0 0 14px">
@@ -4334,23 +4368,26 @@ function openGeneratePlanModal() {
     <button type="button" class="btn btn-outline btn-sm" style="margin:4px 0 16px" onclick="genAddRow()">${icon('plus', 14)} Toets toevoegen</button>
 
     <div class="form-group">
-      <label class="form-label">Hoeveel wil je per toets leren?</label>
-      <select class="form-select" id="gen-amount">
-        <option value="2">Weinig — ±2 uur per toets</option>
-        <option value="4" selected>Gemiddeld — ±4 uur per toets</option>
-        <option value="6">Veel — ±6 uur per toets</option>
-        <option value="8">Heel veel — ±8 uur per toets</option>
-      </select>
+      <label class="form-label">Hoeveel tijd per toets?</label>
+      <div id="gen-perexam-box"></div>
+      <span class="form-hint">Hier zit geen maximum aan &mdash; vul in wat jij nodig hebt.</span>
     </div>
-    <div style="display:flex;gap:10px">
-      <div class="form-group" style="flex:1">
-        <label class="form-label">Tijd per dag</label>
-        <input type="number" class="form-input" id="gen-daily" min="0.5" max="16" step="0.5" value="2">
-      </div>
-      <div class="form-group" style="flex:1">
-        <label class="form-label">Klaar (dagen vooraf)</label>
-        <input type="number" class="form-input" id="gen-ready" min="0" max="14" value="1">
-      </div>
+
+    <div class="form-group">
+      <label class="form-label">Per vak aanpassen
+        <span style="font-weight:400;color:var(--gray-400)">(voor sommige vakken hoef je veel minder te doen)</span>
+      </label>
+      <div id="gen-hours-box"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Hoeveel tijd heb je per dag?</label>
+      <div id="gen-daily-box"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Klaar zijn, hoeveel dagen vóór je toets?</label>
+      <input type="number" class="form-input" id="gen-ready" min="0" max="14" value="1" style="max-width:120px">
     </div>
 
     <div class="gen-section-title">Hoe leer jij het liefst?</div>
@@ -4366,12 +4403,9 @@ function openGeneratePlanModal() {
           <option value="evening">&apos;s Avonds</option>
         </select>
       </div>
-      <div class="form-group" style="flex:1;min-width:150px">
+      <div class="form-group" style="flex:1;min-width:170px">
         <label class="form-label">Hoe lang achter elkaar?</label>
-        <div class="gen-two-nums">
-          <label>Blok <input type="number" class="form-input" id="gen-block" min="15" max="180" step="5" value="45"> min</label>
-          <label>Pauze <input type="number" class="form-input" id="gen-break" min="0" max="60" step="5" value="10"> min</label>
-        </div>
+        <div id="gen-blocks-box"></div>
       </div>
     </div>
 
@@ -4396,11 +4430,82 @@ function openGeneratePlanModal() {
       Vakken afwisselen &mdash; nooit twee blokken hetzelfde vak achter elkaar
     </label>
 
+    <label class="exam-day-toggle" style="margin-bottom:4px" title="Laat je dit uit, dan vul je straks zelf in wat je moet doen.">
+      <input type="checkbox" id="gen-autotasks">
+      Verzin standaardtaken voor me (samenvatten, oefenen, herhalen)
+    </label>
+
     <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px;padding:12px" onclick="generatePlan()">
       ✨ Maak mijn planning
     </button>
   `);
   renderGenExamRows();
+  renderGenSteppers();
+}
+
+// De plus/min-knoppen in de wizard opnieuw tekenen
+function renderGenSteppers() {
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  const r = (n) => Math.round(n * 10) / 10;
+  set('gen-perexam-box', stepper(
+    fmtHours(genPerExam),
+    `genSet('perExam',${r(genPerExam - 0.5)})`, `genSet('perExam',${r(genPerExam + 0.5)})`,
+    genPerExam > 0.5, genPerExam < 60));
+  set('gen-daily-box', stepper(
+    fmtHours(genDaily),
+    `genSet('daily',${r(genDaily - 0.5)})`, `genSet('daily',${r(genDaily + 0.5)})`,
+    genDaily > 0.5, genDaily < 16));
+  set('gen-blocks-box', `
+    <div class="gen-two-steppers">
+      <div><span class="stepper-label">Blok</span>${stepper(genBlock + ' min', `genSet('block',${genBlock - 5})`, `genSet('block',${genBlock + 5})`, genBlock > 15, genBlock < 180)}</div>
+      <div><span class="stepper-label">Pauze</span>${stepper(genBreak === 0 ? 'geen' : genBreak + ' min', `genSet('break',${genBreak - 5})`, `genSet('break',${genBreak + 5})`, genBreak > 0, genBreak < 60)}</div>
+    </div>`);
+  renderGenHoursBox();
+}
+
+// Per vak een eigen aantal uren, met het standaardaantal als startpunt
+function renderGenHoursBox() {
+  const box = document.getElementById('gen-hours-box');
+  if (!box) return;
+  const keys = [...new Set(genExams.map(e => e.subject).filter(k => subjects[k]))];
+  if (!keys.length) {
+    box.innerHTML = '<span class="form-hint">Kies eerst je toetsen hierboven.</span>';
+    return;
+  }
+  const r = (n) => Math.round(n * 10) / 10;
+  box.innerHTML = keys.map(k => {
+    const h = genHours[k] != null ? genHours[k] : genPerExam;
+    const eigen = genHours[k] != null;
+    return `
+      <div class="gen-hours-row">
+        <span class="gen-hours-vak">${subjects[k].icon} ${esc(subjects[k].name)}</span>
+        ${stepper(
+          `<span class="${eigen ? 'own' : ''}">${fmtHours(h)}</span>`,
+          `genSetSubjectHours('${k}',${r(h - 0.5)})`, `genSetSubjectHours('${k}',${r(h + 0.5)})`,
+          h > 0.5, h < 60)}
+        ${eigen ? `<button type="button" class="gen-hours-reset" onclick="genSetSubjectHours('${k}',null)" title="Terug naar het standaardaantal">herstel</button>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function genSet(what, value) {
+  const v = parseFloat(value);
+  if (isNaN(v)) return;
+  if (what === 'perExam') genPerExam = Math.max(0.5, Math.min(60, v));
+  else if (what === 'daily') genDaily = Math.max(0.5, Math.min(16, v));
+  else if (what === 'block') genBlock = Math.max(15, Math.min(180, Math.round(v)));
+  else if (what === 'break') genBreak = Math.max(0, Math.min(60, Math.round(v)));
+  renderGenSteppers();
+}
+
+function genSetSubjectHours(key, value) {
+  if (value === null || value === 'null') delete genHours[key];
+  else {
+    const v = parseFloat(value);
+    if (isNaN(v)) return;
+    genHours[key] = Math.max(0.5, Math.min(60, v));
+  }
+  renderGenHoursBox();
 }
 
 // Moeilijke vakken: de vakken die je bij je toetsen hebt gekozen
@@ -4482,15 +4587,14 @@ function generatePlan() {
   if (!valid.length) { alert('Voeg minstens één toets toe (vak + datum).'); return; }
 
   const type = (document.querySelector('input[name="gen-type"]:checked') || {}).value || 'toetsweek';
-  const hoursPer = parseFloat(document.getElementById('gen-amount').value) || 4;
-  const daily = Math.max(0.5, parseFloat(document.getElementById('gen-daily').value) || 2);
   const ready = Math.max(0, parseInt(document.getElementById('gen-ready').value) || 0);
-
-  const blockMinutes = Math.max(15, Math.min(180, parseInt((document.getElementById('gen-block') || {}).value) || 45));
-  const breakRaw = parseInt((document.getElementById('gen-break') || {}).value);
-  const breakMinutes = Math.max(0, Math.min(60, isNaN(breakRaw) ? 10 : breakRaw));
   const peak = (document.getElementById('gen-peak') || {}).value || 'any';
   const variety = !document.getElementById('gen-variety') || document.getElementById('gen-variety').checked;
+  const autoTasks = !!(document.getElementById('gen-autotasks') || {}).checked;
+  // Bloklengte, pauze en uren komen van de plus/min-knoppen
+  const blockMinutes = genBlock;
+  const breakMinutes = genBreak;
+  const daily = genDaily;
 
   const sorted = [...valid].sort((a, b) => new Date(a.date) - new Date(b.date));
   const earliest = new Date(sorted[0].date);
@@ -4518,12 +4622,21 @@ function generatePlan() {
   let exId = 1, taskId = 1;
   sorted.forEach(e => {
     const s = subjects[e.subject];
-    // Moeilijke vakken krijgen een derde meer leertijd
-    const total = genHard.includes(e.subject) ? hoursPer * 1.3 : hoursPer;
     plan.exams.push({ id: exId++, subject: e.subject, title: e.title || '', date: new Date(e.date).toISOString(), time: '' });
+    if (!autoTasks) return;   // je vult je taken zelf in
+    // Eigen aantal uren voor dit vak, anders het standaardaantal. Moeilijke
+    // vakken krijgen een derde meer, tenzij je het vak zelf hebt ingevuld.
+    let total = genHours[e.subject] != null ? genHours[e.subject] : genPerExam;
+    if (genHours[e.subject] == null && genHard.includes(e.subject)) total = total * 1.3;
     genTasksForExam(e.subject, e.title, total).forEach(t => {
       plan.tasks.push({ id: taskId++, subject: e.subject, title: `${t.title} — ${s ? s.name : ''}`.trim(), hours: t.hours, hoursDone: 0, done: false });
     });
+  });
+  // Hoeveel uur je per vak wilt besteden bewaren we, zodat je het later nog
+  // kunt zien en aanpassen — ook als je je taken zelf invult.
+  plan.subjectHours = {};
+  sorted.forEach(e => {
+    if (genHours[e.subject] != null) plan.subjectHours[e.subject] = genHours[e.subject];
   });
 
   plans.push(plan);
@@ -4532,20 +4645,75 @@ function generatePlan() {
   closeModal();
   renderPage('planner');
 
-  // Korte uitleg na het genereren
-  const st = planStatus(plan);
+  // Heb je geen standaardtaken gevraagd, dan vul je ze nu zelf in.
   setTimeout(() => {
-    openModal('Klaar! 🎉', `
-      <p style="margin:0 0 12px">Je planning <strong>${esc(plan.name)}</strong> staat klaar met <strong>${plan.exams.length} toets${plan.exams.length !== 1 ? 'en' : ''}</strong> en <strong>${plan.tasks.length} leertaken</strong>, automatisch ingepland.</p>
-      <ul class="onb-list" style="margin-bottom:14px">
-        <li>Je dagen zijn verdeeld in blokken van ${blockMinutes} min met pauzes ertussen${variety ? ', met afwisseling tussen vakken' : ''}</li>
-        <li>Vink taken af of log je uren — je ziet of je op schema loopt</li>
-        <li>Iets anders willen? Typ het in de <strong>stuurbalk</strong> onder je schema, bijvoorbeeld "minder wiskunde op maandag"</li>
-        <li>Wil je zelf schuiven? Gebruik "Schema aanpassen"</li>
-      </ul>
-      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Aan de slag</button>
-    `);
+    if (plan.tasks.length === 0) openTaskSetupModal(plan.id, blockMinutes, variety);
+    else openPlanReadyModal(plan.id, blockMinutes, variety);
   }, 200);
+}
+
+// Stap na het aanmaken: zelf invullen wat je moet doen. Zonder taken kan de
+// planner niets verdelen, dus dit is de echte laatste stap — maar je mag hem
+// overslaan en later terugkomen.
+function openTaskSetupModal(planId, blockMinutes, variety) {
+  const p = getPlan(planId);
+  if (!p) return;
+  const vakken = [...new Set((p.exams || []).map(e => e.subject))].filter(k => subjects[k]);
+  openModal('Wat moet je doen?', `
+    <p style="margin:0 0 12px">Je toetsen staan erin. Nu nog <strong>wat je ervoor moet doen</strong> &mdash; dat weet jij beter dan wij. Daarna verdelen we het over je dagen.</p>
+    <div class="task-setup-vakken">
+      ${vakken.map(k => `<span class="sched-tag" style="background:${subjects[k].light};color:${subjects[k].color}">${subjects[k].icon} ${esc(subjects[k].name)}</span>`).join('')}
+    </div>
+    <div class="task-setup-acties">
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal();openPasteTasksModal(${p.id})">
+        &#128203; Lijst plakken <span class="task-setup-hint">uit je agenda of Magister</span>
+      </button>
+      <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="closeModal();openAddTaskModal(${p.id})">
+        ${icon('plus', 15)} Taak voor taak invullen
+      </button>
+      <button class="btn btn-outline" style="width:100%;justify-content:center" onclick="genFillStandardTasks(${p.id})">
+        &#10024; Toch standaardtaken laten verzinnen
+      </button>
+      <button class="task-setup-skip" onclick="closeModal()">Nu overslaan &mdash; ik vul het later in</button>
+    </div>
+  `);
+}
+
+// Alsnog standaardtaken, voor wie er in de wizard voor koos om het zelf te
+// doen en er toch niet uitkomt.
+function genFillStandardTasks(planId) {
+  const p = getPlan(planId);
+  if (!p) return;
+  let taskId = Math.max(0, ...(p.tasks || []).map(t => t.id)) + 1;
+  const hard = (p.prefs && p.prefs.hardSubjects) || [];
+  [...new Set((p.exams || []).map(e => e.subject))].forEach(key => {
+    const s = subjects[key];
+    if (!s) return;
+    let total = (p.subjectHours && p.subjectHours[key] != null) ? p.subjectHours[key] : 4;
+    if ((!p.subjectHours || p.subjectHours[key] == null) && hard.includes(key)) total = total * 1.3;
+    genTasksForExam(key, '', total).forEach(t => {
+      p.tasks.push({ id: taskId++, subject: key, title: `${t.title} — ${s.name}`, hours: t.hours, hoursDone: 0, done: false });
+    });
+  });
+  savePlans();
+  closeModal();
+  renderPage('planner');
+  showToast(`${p.tasks.length} leertaken toegevoegd ✓`);
+}
+
+function openPlanReadyModal(planId, blockMinutes, variety) {
+  const p = getPlan(planId);
+  if (!p) return;
+  openModal('Klaar! 🎉', `
+    <p style="margin:0 0 12px">Je planning <strong>${esc(p.name)}</strong> staat klaar met <strong>${p.exams.length} toets${p.exams.length !== 1 ? 'en' : ''}</strong> en <strong>${p.tasks.length} leertaken</strong>, verdeeld over je dagen.</p>
+    <ul class="onb-list" style="margin-bottom:14px">
+      <li>Je dagen zijn verdeeld in blokken van ${blockMinutes} min met pauzes ertussen${variety ? ', met afwisseling tussen vakken' : ''}</li>
+      <li>Is een toets morgen? Dan gaat dat vak vóór, en pas als dat klaar is komt de rest</li>
+      <li>Vink taken af of log je uren &mdash; je ziet of je op schema loopt</li>
+      <li>Iets anders willen? Typ het in de <strong>stuurbalk</strong> onder je schema</li>
+    </ul>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Aan de slag</button>
+  `);
 }
 
 function readPlanForm() {
@@ -4602,6 +4770,12 @@ function deletePlan(id) {
 function updatePlanField(id, field, value) {
   const p = getPlan(id);
   if (!p) return;
+  // Uren per dag binnen het redelijke houden, ook als er van buiten iets
+  // vreemds komt (de plus/min-knoppen rekenen zelf al mee).
+  if (field === 'defaultDailyHours') {
+    const v = parseFloat(value);
+    value = Math.max(0, Math.min(16, isNaN(v) ? 0 : Math.round(v * 10) / 10));
+  }
   p[field] = value;
   savePlans();
   renderPage('planner');

@@ -3926,14 +3926,66 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--gray-300); border-radius: 6px;
   background: var(--white); color: var(--gray-800); font-size: 0.82rem; font-weight: 600;
 }
-.gen-two-nums { display: flex; gap: 10px; }
-.gen-two-nums label {
-  flex: 1; display: flex; align-items: center; gap: 4px;
-  font-size: 0.78rem; font-weight: 600; color: var(--gray-600);
-}
-.gen-two-nums .form-input { width: 100%; min-width: 0; text-align: center; }
 
 /* Uitleg bij het exporteren naar je agenda */
 .ics-help { margin-top: 14px; font-size: 0.82rem; color: var(--gray-600); }
 .ics-help summary { cursor: pointer; font-weight: 600; color: var(--gray-700); }
 .ics-help p { margin: 8px 0 0; }
+
+/* ============================================================ */
+/* --- Plus/min-knop: werkt wél op Safari en op een telefoon --- */
+/* ============================================================ */
+.stepper {
+  display: inline-flex; align-items: center; gap: 2px;
+  border: 1px solid var(--gray-300); border-radius: var(--radius-full);
+  background: var(--white); padding: 2px;
+}
+.stepper-btn {
+  width: 30px; height: 30px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--radius-full);
+  background: var(--gray-100); color: var(--gray-700);
+  font-size: 1.05rem; font-weight: 700; line-height: 1; cursor: pointer;
+  transition: var(--transition); -webkit-user-select: none; user-select: none;
+}
+.stepper-btn:hover:not(:disabled) { background: var(--navy-900); color: var(--white); }
+.stepper-btn:disabled { opacity: 0.3; cursor: default; }
+.stepper-value {
+  min-width: 86px; padding: 0 8px; text-align: center;
+  font-size: 0.85rem; font-weight: 700; color: var(--gray-800);
+  white-space: nowrap;
+}
+.stepper-value .own { color: var(--accent-hover); }
+.stepper-label {
+  display: block; margin-bottom: 3px;
+  font-size: 0.74rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.03em; color: var(--gray-500);
+}
+.steer-nums { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 10px; }
+.gen-two-steppers { display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* Uren per vak in de wizard */
+.gen-hours-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 5px 0;
+}
+.gen-hours-vak { flex: 1; min-width: 110px; font-size: 0.84rem; font-weight: 600; color: var(--gray-700); }
+.gen-hours-reset {
+  border: none; background: transparent; color: var(--gray-500);
+  font-size: 0.72rem; text-decoration: underline; cursor: pointer;
+}
+.gen-hours-reset:hover { color: var(--gray-800); }
+
+/* De stap "wat moet je doen?" na het aanmaken */
+.task-setup-vakken { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+.task-setup-acties { display: flex; flex-direction: column; gap: 8px; }
+.task-setup-hint { font-weight: 500; opacity: 0.75; font-size: 0.78rem; }
+.task-setup-skip {
+  margin-top: 2px; padding: 8px; border: none; background: transparent;
+  color: var(--gray-500); font-size: 0.82rem; text-decoration: underline; cursor: pointer;
+}
+.task-setup-skip:hover { color: var(--gray-800); }
+
+@media (max-width: 480px) {
+  .stepper-value { min-width: 74px; font-size: 0.8rem; }
+}

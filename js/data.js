@@ -1698,6 +1698,13 @@ function buildSchedule(plan) {
           && steerAllowsSubject(plan, i.task.subject, jsDay));
         if (!pool.length) break;
 
+        // Werk dat vandaag áf moet (de toets is morgen) gaat vóór al het
+        // andere. Afwisselen is fijner leren, maar niet als een vak waarvan
+        // de toets nog ver weg is tijd wegpikt van de toets van morgen.
+        // Is dat werk klaar en heb je tijd over? Dan gaat de rest gewoon door.
+        const mustToday = pool.filter(i => +i.due === +day.date);
+        if (mustToday.length) pool = mustToday;
+
         if (keepTogether && last) {
           const same = pool.filter(i => i.task.subject === last);
           if (same.length) pool = same;
