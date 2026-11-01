@@ -4378,8 +4378,9 @@ function openGeneratePlanModal() {
     </div>
 
     <div class="form-group">
-      <label class="form-label">Hoeveel tijd heb je per dag?</label>
+      <label class="form-label">Hoeveel tijd leer je per dag?</label>
       <div id="gen-daily-box"></div>
+      <span class="form-hint">Dit kun je later per dag nog aanpassen.</span>
     </div>
 
     <div class="form-group">
