@@ -4540,14 +4540,27 @@ function renderGenExamRows() {
   const opts = (sel) => mySubjectEntries().map(([k, s]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${s.name}</option>`).join('');
   box.innerHTML = genExams.map((ex, i) => `
     <div class="gen-exam-row">
-      <select class="form-select" onchange="genExams[${i}].subject=this.value;renderGenHardRow()">
+      <select class="form-select" onchange="genSetExamSubject(${i},this.value)">
         <option value="">Vak...</option>${opts(ex.subject)}
       </select>
       <input type="date" class="form-input" value="${ex.date}" onchange="genExams[${i}].date=this.value">
       <button type="button" class="lesson-action-btn delete" onclick="genRemoveRow(${i})" title="Verwijderen">${icons.x}</button>
     </div>
   `).join('');
+  genRefreshSubjectBoxes();
+}
+
+// Kies je een vak, dan moeten de twee lijsten die van je vakken afhangen
+// meteen mee: "moeilijke vakken" en "uren per vak".
+function genSetExamSubject(i, value) {
+  if (!genExams[i]) return;
+  genExams[i].subject = value;
+  genRefreshSubjectBoxes();
+}
+
+function genRefreshSubjectBoxes() {
   renderGenHardRow();
+  renderGenHoursBox();
 }
 
 function genAddRow() {
