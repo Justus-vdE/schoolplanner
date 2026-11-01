@@ -3102,7 +3102,7 @@ function renderWeeklyPlanner(plan) {
               <button class="lesson-action-btn delete" onclick="removeCommitment(${plan.id},${c.id})" title="Verwijderen">${icons.x}</button>
             </div>`).join('')}
          </div>`
-      : '<p class="form-hint" style="margin:0 0 8px">Nog niets. Heb je elke dinsdag training? Voeg het toe, dan plant de planner daar niks overheen.</p>'}
+      : '<p class="form-hint" style="margin:0 0 8px">Voeg toe wat elke week terugkomt. De planner plant daar niets overheen.</p>'}
     <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center" onclick="openCommitmentModal(${plan.id})">
       ${icon('plus', 14)} Vaste bezigheid toevoegen
     </button>
@@ -4370,13 +4370,10 @@ function openGeneratePlanModal() {
     <div class="form-group">
       <label class="form-label">Hoeveel tijd per toets?</label>
       <div id="gen-perexam-box"></div>
-      <span class="form-hint">Hier zit geen maximum aan &mdash; vul in wat jij nodig hebt.</span>
     </div>
 
     <div class="form-group">
-      <label class="form-label">Per vak aanpassen
-        <span style="font-weight:400;color:var(--gray-400)">(voor sommige vakken hoef je veel minder te doen)</span>
-      </label>
+      <label class="form-label">Per vak aanpassen</label>
       <div id="gen-hours-box"></div>
     </div>
 
@@ -4391,7 +4388,7 @@ function openGeneratePlanModal() {
     </div>
 
     <div class="gen-section-title">Hoe leer jij het liefst?</div>
-    <p class="form-hint" style="margin:0 0 12px">Hiermee maken we je dagen afwisselend in plaats van uur na uur hetzelfde vak.</p>
+    <p class="form-hint" style="margin:0 0 12px">Hiermee verdelen we je dagen in blokken, met afwisseling tussen vakken.</p>
 
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <div class="form-group" style="flex:1;min-width:150px">
